@@ -36,7 +36,7 @@ const Header = () => {
             justifyContent={"space-between"}
             alignItems={"center"}
             py={4}
-            px={6}
+            px={5}
             bg={useColorModeValue("gray.100", "gray.700")}
             borderRadius="lg"
             boxShadow="md"
@@ -44,7 +44,7 @@ const Header = () => {
             {/* Logo/App Name */}
             <Link as={RouterLink} to="/">
                 <Text fontSize="xl" fontWeight="bold">
-                    Q-Chat
+                    Chat-Arakkha
                 </Text>
             </Link>
 

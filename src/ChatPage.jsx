@@ -332,6 +332,7 @@ const ChatPage = () => {
             md: "full",
           }}
           mx={"auto"}
+          py={0}
           h="calc(100vh - 100px)"
         >
           <Flex
@@ -340,13 +341,13 @@ const ChatPage = () => {
             flexDirection={"column"}
             maxW={{ sm: "250px", md: "full" }}
             mx={"auto"}
+            py={0}
           >
             <Flex
               direction={"column"}
               gap={2}
               py={2}
               px={4}
-              borderBottom="1px solid"
               borderColor={useColorModeValue("red.200", "gray.600")}
             >
               <Header />
@@ -377,7 +378,6 @@ const ChatPage = () => {
             <Flex
               direction={"column"}
               gap={2}
-              p={2}
               h="100%"
               overflowY="auto"
             >
