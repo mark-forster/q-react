@@ -15,6 +15,15 @@ const Conversation = ({conversation,isOnline}) => {
     // Manage the currently selected conversation
     const [selectedConversation,setSelectedConversation] = useRecoilState(selectedConversationAtom);
     
+    // Determine if the current conversation is selected
+    const isSelected = selectedConversation?._id === conversation._id;
+
+    // Define colors based on the selected state and color mode
+    const selectedBgColor = useColorModeValue("gray.700", "gray.dark");
+    const selectedTextColor = "white";
+    const defaultBgColor = useColorModeValue("white", "gray.800"); // Use a lighter default background for light mode
+    const defaultTextColor = useColorModeValue("gray.800", "white"); // Use a dark text color for light mode
+
     return (
         <>
             <Flex gap={4}
@@ -23,8 +32,8 @@ const Conversation = ({conversation,isOnline}) => {
                 // Hover effect for the conversation item
                 _hover={{
                     cursor: "pointer",
-                    bg: useColorModeValue("gray.600", "gray.dark"),
-                    color: "white",
+                    bg: selectedBgColor, // Use a consistent hover color
+                    color: selectedTextColor, // Use a consistent hover text color
                 }}
                 // Set the selected conversation when the item is clicked
                 onClick={()=>setSelectedConversation({
@@ -36,9 +45,8 @@ const Conversation = ({conversation,isOnline}) => {
                     mock:conversation.mock
                 })}
                 // Change background color if the conversation is selected
-                bg={
-                    selectedConversation?._id === conversation._id ? (colorMode === "light" ? "gray.900" : "gray.dark") : ""
-                }
+                bg={isSelected ? selectedBgColor : defaultBgColor}
+                color={isSelected ? selectedTextColor : defaultTextColor}
                 borderRadius={"md"}
             >
                 <WrapItem>
@@ -58,21 +66,25 @@ const Conversation = ({conversation,isOnline}) => {
                         )}
                     </Avatar>
                 </WrapItem>
-                <Stack direction={"column"} fontSize={"sm"}>
+                <Stack direction={"column"} fontSize={"sm"} overflow="hidden">
                     <Text fontWeight='700' display={"flex"} alignItems={"center"}>
                         {user?.name}
                     </Text>
-                    <Text fontSize={"xs"} display={"flex"} alignItems={"center"} gap={1}>
+                    <Text fontSize={"xs"} display={"flex"} alignItems={"center"} gap={1} whiteSpace="nowrap" textOverflow="ellipsis" overflow="hidden">
                         {/* Display seen icon for messages sent by the current user */}
-                        {currentUser._id === lastMessage.sender ? (
-                            <BsCheckAll size={16} color={lastMessage.seen ? "blue.400" : ""}/>
-                        ) : (
-                            ""
+                        {currentUser._id === lastMessage.sender && (
+                            <BsCheckAll size={16} color={lastMessage.seen ? "blue.400" : ""} />
                         )}
                         {/* Display the last message, or an image icon if it's a photo */}
-                        {lastMessage.text.length > 18
-                            ? lastMessage.text.substring(0, 18) + "..."
-                            : lastMessage.text || <BsImage size={16} />}
+                        {lastMessage.text ? (
+                            <Text as="span">
+                                {lastMessage.text.length > 20
+                                    ? `${lastMessage.text.substring(0, 20)}...`
+                                    : lastMessage.text}
+                            </Text>
+                        ) : (
+                            <BsImage size={16} />
+                        )}
                     </Text>
                 </Stack>
             </Flex>

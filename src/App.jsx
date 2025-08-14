@@ -69,7 +69,6 @@ function App() {
     <>
       <Box position={"relative"} w={"full"}>
         <Container maxW={pathname === '/' ? {base: "620px", md: "900px"} : "620px"}>
-          <Header />
           <Toaster position="top-center" toastOptions={{ duration: 2000 }} />
           
           <Routes>
