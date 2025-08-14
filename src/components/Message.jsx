@@ -25,9 +25,10 @@ const Message = ({ ownMessage, message }) => {
         <>
             {ownMessage ? (
                 // Flex container for messages sent by the current user
+                // The main Flex is aligned to the right. The avatar is now the first child.
                 <Flex gap={2} alignSelf={"flex-end"} alignItems="flex-end">
-                    {/* User's profile picture */}
-                    <Avatar src={user.profilePic.url} w={8} h={8} /> {/* Made the avatar size a bit bigger for better visibility */}
+                    {/* User's profile picture is now on the left side */}
+                    <Avatar src={user.profilePic.url} w={8} h={8} /> 
                     {/* Image message */}
                     {message.img && (
                         <Box mt={1} w={"200px"}>
