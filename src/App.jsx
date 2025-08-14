@@ -19,9 +19,12 @@ import ChatPage from "./ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
 
-// Create a single axios instance for the entire application
+// Create a single axios instance for the entire application.
+// It checks for a VITE_API_URL environment variable to handle production builds.
+// For local development, it will default to "/api/v1", which can be handled by a proxy.
+const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
-  baseURL: "/api/v1",
+  baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
 
