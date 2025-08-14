@@ -23,6 +23,13 @@ import { useSocket } from "./context/SocketContext";
 import { SearchIcon, ChevronLeftIcon } from '@chakra-ui/icons';
 import Header from "./components/Header";
 
+// Create an axios instance here to use VITE_API_URL consistently.
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const api = axios.create({
+    baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
+    withCredentials: true,
+});
+
 // A component similar to Conversation for search results
 const SearchUserResult = ({ user, onClick, isOnline }) => {
   const bg = useColorModeValue("gray.50", "gray.700");
@@ -81,7 +88,7 @@ const ChatPage = () => {
   useEffect(() => {
     const getConversations = async () => {
       try {
-        const response = await axios.get("/api/v1/messages/conversations");
+        const response = await api.get("/messages/conversations"); // axios.get() -> api.get()
         let fetchedConversations = response.data.conversations;
 
         // Sort conversations by the last message's timestamp (newest at the top)
@@ -137,7 +144,7 @@ const ChatPage = () => {
         setSearchedUsers([]); // Clear old results before starting a new search
         try {
           // Changed according to the API endpoint provided by the user
-          const response = await axios.get(`/api/v1/users/search/${searchTerm}`);
+          const response = await api.get(`/users/search/${searchTerm}`); // axios.get() -> api.get()
           if (response.data.errorMessage) {
             toast.error(response.data.errorMessage);
             setSearchedUsers([]);
@@ -264,7 +271,7 @@ const ChatPage = () => {
           // If the message is for a new conversation not yet in the list, fetch it.
           const getNewConversation = async () => {
             try {
-              const response = await axios.get(`/api/v1/messages/conversation/${message.conversationId}`);
+              const response = await api.get(`/messages/conversation/${message.conversationId}`); // axios.get() -> api.get()
               if (response.data) {
                 // We must use a nested state update to avoid the stale state problem.
                 setConversations((latestConvs) => [response.data.conversation, ...latestConvs]);

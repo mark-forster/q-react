@@ -25,6 +25,13 @@ import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import userAtom from '../atoms/userAtom';
 import { FaLink } from 'react-icons/fa';
 
+// Create an axios instance here to use VITE_API_URL consistently.
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const api = axios.create({
+    baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
+    withCredentials: true,
+});
+
 const MessageInput = ({ setMessages }) => {
     // State for the message input field content
     const [messageText, setMessageText] = useState("");
@@ -84,12 +91,7 @@ const MessageInput = ({ setMessages }) => {
                 formData.append('image', imageFile); 
             }
             
-            const api = axios.create({
-                baseURL: "/api/v1",
-                withCredentials: true,
-            });
-
-            // Post the FormData object to the API
+            // Use the globally defined 'api' instance
             const response = await api.post('/messages', formData);
 
             const newMessage = response.data.data;
@@ -139,11 +141,9 @@ const MessageInput = ({ setMessages }) => {
                 
                 // Sort the conversation list to bring the most recent to the top
                 if(conversationFound) {
-                    return updatedConversations.sort((a, b) => {
-                        if (a._id === newConversationId) return -1;
-                        if (b._id === newConversationId) return 1;
-                        return 0;
-                    });
+                    const updatedConversation = updatedConversations.find(c => c._id === newConversationId);
+                    const otherConversations = updatedConversations.filter(c => c._id !== newConversationId);
+                    return [updatedConversation, ...otherConversations];
                 }
 
                 return updatedConversations;

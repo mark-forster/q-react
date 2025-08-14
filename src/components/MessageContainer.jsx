@@ -21,6 +21,13 @@ import userAtom from "../atoms/userAtom";
 import { useSocket } from "../context/SocketContext";
 import messageSound from "../assets/sounds/msgSound.mp3";
 
+// Create an axios instance here to use VITE_API_URL consistently.
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const api = axios.create({
+    baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
+    withCredentials: true,
+});
+
 // Component for the skeleton loading animation
 const LoadingMessageSkeleton = ({ isSender }) => (
     <Flex
@@ -45,7 +52,7 @@ const MessageContainer = () => {
     const [loadingMessage, setLoadingMessage] = useState(true);
     const [messages, setMessages] = useState([]);
     const currentUser = useRecoilValue(userAtom);
-    const { socket,onlineUsers } = useSocket();
+    const { socket, onlineUsers } = useSocket();
     const setConversations = useSetRecoilState(conversationsAtom);
     const messageEndRef = useRef(null);
 
@@ -67,8 +74,8 @@ const MessageContainer = () => {
                 }
 
                 // Fetch messages
-                const response = await axios.get(
-                    `/api/v1/messages/conversation/${selectedConversation._id}`
+                const response = await api.get(
+                    `/messages/conversation/${selectedConversation._id}`
                 );
                 setMessages(response.data);
             } catch (error) {
@@ -92,22 +99,36 @@ const MessageContainer = () => {
                 // Add the new message to the list
                 setMessages((prev) => [...prev, message]);
             }
-
-            // Update the last message in the conversation list
+            
             setConversations((prev) => {
+                let conversationFound = false;
                 const updatedConversations = prev.map((conversation) => {
                     if (conversation._id === message.conversationId) {
+                        conversationFound = true;
                         return {
                             ...conversation,
                             lastMessage: {
                                 text: message.text,
                                 sender: message.sender,
+                                // Update the timestamp
+                                updatedAt: new Date().toISOString(),
                             },
                         };
                     }
                     return conversation;
                 });
-                return updatedConversations;
+                
+                if (conversationFound) {
+                    const updatedConversation = updatedConversations.find(
+                        (conv) => conv._id === message.conversationId
+                    );
+                    const otherConversations = updatedConversations.filter(
+                        (conv) => conv._id !== message.conversationId
+                    );
+                    return [updatedConversation, ...otherConversations];
+                }
+
+                return prev;
             });
         };
 
@@ -170,7 +191,7 @@ const MessageContainer = () => {
             <Divider />
             <Flex
                 flexDir={"column"}
-                flex={"flexGrow"} 
+                flex={"flexGrow"}
                 gap={4}
                 my={4}
                 p={2}
@@ -184,7 +205,7 @@ const MessageContainer = () => {
                             isSender={i % 2 === 0}
                         />
                     ))}
-                    {!loadingMessage && messages.length === 0 && (
+                {!loadingMessage && messages.length === 0 && (
                     <Flex alignItems="center" justifyContent="center" height="100%">
                         <Text color="gray.500">No message, start a conversation</Text>
                     </Flex>
@@ -195,7 +216,7 @@ const MessageContainer = () => {
                             key={message._id || index}
                             direction={"column"}
                             ref={
-                                messages.length - 1 === messages.indexOf(message)
+                                messages.length - 1 === index
                                     ? messageEndRef
                                     : null
                             }
