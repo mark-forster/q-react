@@ -9,15 +9,7 @@ const Homepage = () => {
     const user = useRecoilValue(userAtom);
 
     return (
-        <Flex
-            maxW={"1200px"}
-            mx={"auto"} 
-            my={5} 
-            p={4} 
-            minH={"100vh"}
-        >
             <ChatPage />
-        </Flex>
     );
 };
 

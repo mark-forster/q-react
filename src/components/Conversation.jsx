@@ -27,6 +27,7 @@ const Conversation = ({conversation,isOnline}) => {
     return (
         <>
             <Flex gap={4}
+                minHeight={78}
                 alignItems={"center"}
                 p={"1"}
                 // Hover effect for the conversation item

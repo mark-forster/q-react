@@ -18,6 +18,7 @@ import PageNotFound from "./pages/PageNotFound";
 import ChatPage from "./ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
+import VerifyOtpPage from "./pages/VerifyOtpPage";
 
 // Create a single axios instance for the entire application.
 // It checks for a VITE_API_URL environment variable to handle production builds.
@@ -86,6 +87,7 @@ function App() {
               path="/user/chat"
               element={user ? <ChatPage /> : <Navigate to="/auth" />}
             />
+            <Route path="/verify-otp" element={user? <VerifyOtpPage />:<Navigate to="/auth" />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Container>

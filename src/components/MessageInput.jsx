@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Flex,
     Image,
@@ -17,13 +17,14 @@ import {
     useColorModeValue,
 } from "@chakra-ui/react";
 import { IoSendSharp } from "react-icons/io5";
+import { BsEmojiSmile } from "react-icons/bs";
 import toast from 'react-hot-toast';
 import axios from 'axios';
 import usePreviewImg from "../hooks/usePreviewImg";
 import { selectedConversationAtom, conversationsAtom } from '../atoms/messageAtom';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import userAtom from '../atoms/userAtom';
-import { FaLink } from 'react-icons/fa';
+import { FaPaperclip } from 'react-icons/fa';
 
 // Create an axios instance here to use VITE_API_URL consistently.
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -43,6 +44,8 @@ const MessageInput = ({ setMessages }) => {
     const user = useRecoilValue(userAtom);
     // useRef to link to the hidden file input
     const imageRef = useRef(null);
+    // useRef for the message input field to set focus
+    const inputRef = useRef(null);
     // useDisclosure hook for the image preview modal
     const { isOpen, onOpen, onClose } = useDisclosure();
     // Custom hook to handle image preview logic
@@ -148,6 +151,7 @@ const MessageInput = ({ setMessages }) => {
 
                 return updatedConversations;
             });
+            
 
         } catch (error) {
             console.error(error);
@@ -156,6 +160,14 @@ const MessageInput = ({ setMessages }) => {
             setIsSending(false);
         }
     };
+    
+    // useEffect to auto-focus the input field whenever messageText changes
+    useEffect(() => {
+        if (messageText === "" && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [messageText]);
+
 
     const handleImageOpen = () => {
         imageRef.current.click();
@@ -173,57 +185,69 @@ const MessageInput = ({ setMessages }) => {
             <form onSubmit={handleSendMessage}>
                 <Flex
                     alignItems={"center"}
-                    p={4}
-                    bg={useColorModeValue("gray.100", "gray.700")}
-                    borderRadius="lg"
-                    boxShadow="md"
+                    p={0}
+                    bg={useColorModeValue("white", "gray.700")}
+                    borderRadius="full"
+                    boxShadow="xl"
                     mt={4}
                     gap={2}
+                    border="1px solid"
+                    borderColor={useColorModeValue("gray.200", "gray.600")}
                 >
                     <IconButton
-                        onClick={handleImageOpen}
-                        aria-label="Attach image"
-                        icon={<FaLink />}
+                        onClick={() => console.log("Emoji clicked")} // Placeholder for emoji functionality
+                        aria-label="Add emoji"
+                        icon={<BsEmojiSmile />}
                         bg="transparent"
-                        size="md"
+                        size="lg"
                         color={useColorModeValue("gray.600", "gray.300")}
-                        _hover={{ bg: useColorModeValue("gray.200", "gray.600") }}
-                        isDisabled={isSending}
+                        _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
                     />
-                    <Input type="file" hidden ref={imageRef} onChange={handleImageChange} />
                     <InputGroup flex={1}>
                         <Input
                             placeholder="Type a message..."
                             value={messageText}
                             onChange={(e) => setMessageText(e.target.value)}
                             onKeyDown={handleInputKeyDown}
-                            bg={inputBg}
-                            border="1px solid"
-                            borderColor={useColorModeValue("gray.300", "gray.500")}
+                            bg="transparent"
+                            border="none"
                             _focus={{
-                                borderColor: "blue.500",
-                                boxShadow: "0 0 0 1px #4299E1",
+                                border: "none",
+                                boxShadow: "none",
                             }}
-                            borderRadius={"full"}
-                            px={4}
                             py={2}
                             size="lg"
                             isDisabled={isSending}
+                            ref={inputRef} // Set the ref to the input field
                         />
-                        <InputRightElement>
-                            <IconButton
-                                type="submit"
-                                aria-label="Send message"
-                                icon={isSending ? <Spinner size="sm" /> : <IoSendSharp />}
-                                bg={buttonBg}
-                                color="white"
-                                _hover={{ bg: buttonHoverBg }}
-                                isRound={true}
-                                size="lg"
-                                isDisabled={isSending || (!messageText.trim() && !imgUrl)}
-                            />
+                        <InputRightElement height="100%" right="30px">
+                            <Flex gap={1} alignItems="center">
+                                <IconButton
+                                    onClick={handleImageOpen}
+                                    aria-label="Attach image"
+                                    icon={<FaPaperclip />}
+                                    bg="transparent"
+                                    size="lg"
+                                    color={useColorModeValue("gray.600", "gray.300")}
+                                    _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
+                                    isDisabled={isSending}
+                                />
+                                <IconButton
+                                    type="submit"
+                                    aria-label="Send message"
+                                    icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
+                                    bg={buttonBg}
+                                    color="white"
+                                    _hover={{ bg: buttonHoverBg }}
+                                    isRound={true}
+                                    size="md"
+                                    isDisabled={isSending || (!messageText.trim() && !imgUrl)}
+                                    boxShadow="md"
+                                />
+                            </Flex>
                         </InputRightElement>
                     </InputGroup>
+                    <Input type="file" hidden ref={imageRef} onChange={handleImageChange} />
                 </Flex>
             </form>
 
