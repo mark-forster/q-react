@@ -31,12 +31,14 @@ function SignupCard() {
     email: "",
     password: "",
   });
- const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
     if (inputs.email.includes("@")) {
       const usernameFromEmail = "@" + inputs.email.split("@")[0];
-      setInputs((prevInputs) => ({ ...prevInputs, username: usernameFromEmail }));
-      
+      setInputs((prevInputs) => ({
+        ...prevInputs,
+        username: usernameFromEmail,
+      }));
     } else {
       setInputs((prevInputs) => ({ ...prevInputs, username: "" }));
     }
@@ -45,35 +47,37 @@ function SignupCard() {
   const handleSignup = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-     let finalInputs = { ...inputs };
+    let finalInputs = { ...inputs };
     if (finalInputs.email && !finalInputs.username) {
-        if (finalInputs.email.includes("@")) {
-            finalInputs.username = "@" + finalInputs.email.split("@")[0];
-        }
+      if (finalInputs.email.includes("@")) {
+        finalInputs.username = "@" + finalInputs.email.split("@")[0];
+      }
     }
 
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || "";  // Env variable  "" (local proxy)
+      const API_BASE = import.meta.env.VITE_API_URL || ""; // Env variable  "" (local proxy)
 
       const api = axios.create({
-      baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",  // production or dev proxy
+        baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1", // production or dev proxy
         withCredentials: true,
       });
-    console.log(finalInputs.username);
+      console.log(finalInputs.username);
 
       const result = await api.post("/auth/register", finalInputs);
-      
+
       if (result.status === 200) {
         toast.success(result.data.message);
         navigate("/verify-otp", { state: { inputs: finalInputs } });
       }
     } catch (error) {
       console.error(error);
-      const errorMessage = error.response?.data?.errorMessage || "Signup failed due to a network error.";
+      const errorMessage =
+        error.response?.data?.errorMessage ||
+        "Signup failed due to a network error.";
       toast.error(errorMessage);
-    }finally {
-            setIsLoading(false);
-        }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -99,12 +103,14 @@ function SignupCard() {
                 value={inputs.name}
               />
             </FormControl>
-            
+
             <FormControl isRequired>
               <FormLabel>Email Address</FormLabel>
               <Input
                 type="email"
-                onChange={(e) => setInputs({ ...inputs, email: e.target.value })}
+                onChange={(e) =>
+                  setInputs({ ...inputs, email: e.target.value })
+                }
                 value={inputs.email}
               />
             </FormControl>
@@ -114,7 +120,9 @@ function SignupCard() {
               <Input
                 type="text"
                 value={inputs.username}
-                onChange={(e) => setInputs({ ...inputs, username: e.target.value })}
+                onChange={(e) =>
+                  setInputs({ ...inputs, username: e.target.value })
+                }
               />
             </FormControl>
 
@@ -123,13 +131,17 @@ function SignupCard() {
               <InputGroup>
                 <Input
                   type={showPassword ? "text" : "password"}
-                  onChange={(e) => setInputs({ ...inputs, password: e.target.value })}
+                  onChange={(e) =>
+                    setInputs({ ...inputs, password: e.target.value })
+                  }
                   value={inputs.password}
                 />
                 <InputRightElement h={"full"}>
                   <Button
                     variant={"ghost"}
-                    onClick={() => setShowPassword((showPassword) => !showPassword)}
+                    onClick={() =>
+                      setShowPassword((showPassword) => !showPassword)
+                    }
                   >
                     {showPassword ? <ViewIcon /> : <ViewOffIcon />}
                   </Button>
@@ -138,6 +150,7 @@ function SignupCard() {
             </FormControl>
             <Stack spacing={10} pt={2}>
               <Button
+                isLoading={isLoading}
                 loadingText="Submitting"
                 size="lg"
                 bg={"blue.400"}
