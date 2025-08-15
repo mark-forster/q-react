@@ -79,7 +79,7 @@ const Header = () => {
               />
               <MenuList>
                 {/* Profile Link */}
-                <MenuItem as={RouterLink} to="/profile/${user._id}">
+                <MenuItem as={RouterLink} to={`/profile/${user._id}`}>
                   Profile
                 </MenuItem>
                 {/* Settings Link (placeholder) */}

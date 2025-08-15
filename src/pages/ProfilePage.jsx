@@ -91,7 +91,7 @@ function ProfilePage() {
                         <ListItem display="flex" alignItems="center" justifyContent="space-between" cursor="pointer">
                             <Flex alignItems="center">
                                 <ListIcon as={MdEdit} color="gray.500" />
-                                <Text as={RouterLink} to="/edit_profile/${user._id}">Edit Profile</Text>
+                                <Text as={RouterLink} to={`/edit_profile/${user._id}`}>Edit Profile</Text>
                             </Flex>
                             <ChevronRightIcon color="gray.500" />
                         </ListItem>
