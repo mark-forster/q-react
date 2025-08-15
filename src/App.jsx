@@ -87,7 +87,7 @@ function App() {
               path="/user/chat"
               element={user ? <ChatPage /> : <Navigate to="/auth" />}
             />
-            <Route path="/verify-otp" element={user? <VerifyOtpPage />:<Navigate to="/auth" />} />
+            <Route path="/verify-otp" element={<VerifyOtpPage />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Container>
