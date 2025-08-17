@@ -16,6 +16,8 @@ import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../atoms/userAtom";
 import { FaMoon, FaSun } from "react-icons/fa";
+import axios from "axios";
+
 
 const Header = () => {
   const user = useRecoilValue(userAtom);
@@ -24,11 +26,20 @@ const Header = () => {
   const navigate = useNavigate();
 
   // The logout logic is now handled here.
-  const handleLogout = () => {
-    // Clear the user from Recoil state
-    setUser(null);
-    // Navigate back to the home page
-    navigate("/");
+  const handleLogout =async () => {
+
+    try {
+        const API_BASE = import.meta.env.VITE_API_URL || "";  // Env variable  "" (local proxy )
+      const api = axios.create({
+      baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",  // production or dev proxy
+        withCredentials: true,
+      });
+   const result = await api.post("/auth/logout");
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+  setUser(null); // ✅ frontend state clear
+  navigate("/auth");
   };
 
   return (
