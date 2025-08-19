@@ -22,3 +22,9 @@ export const messagesAtom = atom({
   key: "messagesAtom",
   default: [],
 });
+
+// Existing Message Atom
+export const editingMessageAtom = atom({
+  key: "editingMessageAtom",
+  default: null,
+});
