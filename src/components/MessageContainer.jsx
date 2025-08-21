@@ -237,7 +237,7 @@ const MessageContainer = () => {
               direction={"column"}
               ref={messages.length - 1 === index ? messageEndRef : null}
             >
-              <Message message={message} ownMessage={currentUser._id === message.sender} />
+              <Message message={message} ownMessage={currentUser._id === message.sender} selectedConversation={selectedConversation} />
             </Flex>
           ))}
       </Flex>

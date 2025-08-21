@@ -1,410 +1,371 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-    Flex,
-    Image,
-    Input,
-    InputGroup,
-    InputRightElement,
-    Modal,
-    ModalBody,
-    ModalCloseButton,
-    ModalContent,
-    ModalHeader,
-    ModalOverlay,
-    Spinner,
-    useDisclosure,
-    IconButton,
-    useColorModeValue,
-    HStack,
-    Text,
-    Button,
-    Grid,
+  Flex,
+  Image,
+  Input,
+  InputGroup,
+  InputRightElement,
+  Spinner,
+  IconButton,
+  useColorModeValue,
+  HStack,
+  Text,
+  Grid,
 } from "@chakra-ui/react";
 import { IoSendSharp } from "react-icons/io5";
 import { BsEmojiSmile, BsCheckLg } from "react-icons/bs";
 import { FaPaperclip, FaTimes } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { selectedConversationAtom, conversationsAtom, messagesAtom, editingMessageAtom } from '../atoms/messageAtom';
+import {
+  selectedConversationAtom,
+  conversationsAtom,
+  editingMessageAtom,
+} from '../atoms/messageAtom';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import userAtom from '../atoms/userAtom';
 
-// Create an axios instance here to use VITE_API_URL consistently.
+// API
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
-    baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
-    withCredentials: true,
+  baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
+  withCredentials: true,
 });
 
 const MessageInput = ({ setMessages }) => {
-    // State for the message input field content
-    const [messageText, setMessageText] = useState("");
-    // Recoil state for the currently selected conversation
-    const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
-    // Recoil setter for updating the conversation list
-    const setConversations = useSetRecoilState(conversationsAtom);
-    // Recoil state for the current user
-    const user = useRecoilValue(userAtom);
-    // Recoil state to track the message being edited
-    const [editingMessage, setEditingMessage] = useRecoilState(editingMessageAtom);
-    
-    // States for handling multiple file uploads
-    const [selectedFiles, setSelectedFiles] = useState([]);
-    const [filePreviews, setFilePreviews] = useState([]);
-    const [isSending, setIsSending] = useState(false);
-    
-    // useRef to link to the hidden file input
-    const fileInputRef = useRef(null);
-    // useRef for the message input field to set focus
-    const inputRef = useRef(null);
+  const [messageText, setMessageText] = useState("");
+  const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
+  const setConversations = useSetRecoilState(conversationsAtom);
+  const user = useRecoilValue(userAtom);
+  const [editingMessage, setEditingMessage] = useRecoilState(editingMessageAtom);
 
-    // Dynamic colors for Light/Dark mode
-    const inputBg = useColorModeValue("white", "gray.600");
-    const buttonBg = useColorModeValue("blue.500", "blue.400");
-    const buttonHoverBg = useColorModeValue("blue.600", "blue.500");
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [filePreviews, setFilePreviews] = useState([]);
+  const [isSending, setIsSending] = useState(false);
 
-    // This effect updates the input field when an edit is initiated or canceled
-    useEffect(() => {
-        if (editingMessage) {
-            setMessageText(editingMessage.text);
-            if (inputRef.current) {
-                inputRef.current.focus();
-            }
-        } else {
-            setMessageText("");
-        }
-        // This effect will run on initial render and whenever editingMessage changes.
-        // It clears the input field and focuses it when editing is active.
-    }, [editingMessage]);
+  const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
 
-    // Function to handle file selection
-    const handleFileChange = (e) => {
-        const files = Array.from(e.target.files);
-        setSelectedFiles(files);
+  const inputBg = useColorModeValue("white", "gray.600");
+  const buttonBg = useColorModeValue("blue.500", "blue.400");
+  const buttonHoverBg = useColorModeValue("blue.600", "blue.500");
 
-        // Create URLs for file previews
-        const newPreviews = files.map(file => {
-            // Check for image type
-            if (file.type.startsWith('image/')) {
-                return URL.createObjectURL(file);
-            }
-            // For non-image files, you could return a placeholder or an icon
-            return null; // For now, we only preview images
+  useEffect(() => {
+    if (editingMessage) {
+      setMessageText(editingMessage.text);
+      if (inputRef.current) inputRef.current.focus();
+    } else {
+      setMessageText("");
+    }
+  }, [editingMessage]);
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    setSelectedFiles(files);
+    const previews = files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null));
+    setFilePreviews(previews);
+  };
+
+  const removeFile = (idx) => {
+    const nf = selectedFiles.filter((_, i) => i !== idx);
+    const np = filePreviews.filter((_, i) => i !== idx);
+    setSelectedFiles(nf);
+    setFilePreviews(np);
+    if (nf.length === 0 && fileInputRef.current) fileInputRef.current.value = null;
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (isSending) return;
+    setIsSending(true);
+
+    // EDIT existing text message
+    if (editingMessage) {
+      if (messageText.trim() === editingMessage.text) {
+        setIsSending(false);
+        setEditingMessage(null);
+        setMessageText("");
+        return;
+      }
+      try {
+        const res = await api.put(`/messages/update/${editingMessage._id}`, { newText: messageText });
+        const updated = res.data.data;
+
+        setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+
+        setConversations((prevConvs) =>
+          prevConvs.map((conv) =>
+            conv._id === updated.conversationId
+              ? {
+                  ...conv,
+                  lastMessage: {
+                    ...(conv.lastMessage || {}),
+                    text: updated.text,
+                    sender: updated.sender,
+                    updatedAt: updated.updatedAt || updated.createdAt,
+                  },
+                }
+              : conv
+          )
+        );
+
+        toast.success("Message updated!");
+        setEditingMessage(null);
+      } catch (err) {
+        console.error("Failed to update message:", err);
+        toast.error("Failed to update message.");
+      } finally {
+        setIsSending(false);
+        setMessageText("");
+      }
+      return;
+    }
+
+    // CREATE new message
+    const isMessageEmpty = !messageText.trim();
+    const areFilesEmpty = selectedFiles.length === 0;
+    if (isMessageEmpty && areFilesEmpty) {
+      toast.error("Message or file cannot be empty");
+      setIsSending(false);
+      return;
+    }
+    if (!selectedConversation) {
+      toast.error("Please select a conversation first.");
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      if (messageText) formData.append("message", messageText);
+      formData.append("recipientId", selectedConversation.userId);
+      formData.append("conversationId", selectedConversation._id);
+      selectedFiles.forEach((file) => formData.append("files", file));
+
+      const res = await api.post("/messages", formData);
+      const newMessage = res.data.data;
+      const newConversationId = newMessage.conversationId;
+
+      setMessages((prev) => [...prev, newMessage]);
+
+      setMessageText("");
+      setSelectedFiles([]);
+      setFilePreviews([]);
+      if (fileInputRef.current) fileInputRef.current.value = null;
+
+      setConversations((prevConvs) => {
+        let found = false;
+
+        const updated = prevConvs.map((c) => {
+          if (c._id === newConversationId) {
+            found = true;
+            return {
+              ...c,
+              lastMessage: {
+                text: newMessage.text || (newMessage.attachments?.length ? "Attachment" : ""),
+                sender: newMessage.sender,
+                updatedAt: newMessage.updatedAt || newMessage.createdAt,
+              },
+            };
+          }
+          return c;
         });
-        setFilePreviews(newPreviews);
-    };
 
-    // Function to remove a selected file
-    const removeFile = (indexToRemove) => {
-        // Filter out the file to be removed
-        const newFiles = selectedFiles.filter((_, index) => index !== indexToRemove);
-        setSelectedFiles(newFiles);
-        
-        // Remove the corresponding preview URL
-        const newPreviews = filePreviews.filter((_, index) => index !== indexToRemove);
-        setFilePreviews(newPreviews);
-        
-        // If all files are removed, clear the input value to allow re-selection of the same files
-        if (newFiles.length === 0) {
-            if (fileInputRef.current) {
-                fileInputRef.current.value = null;
-            }
+        if (!found && selectedConversation.mock) {
+          // Promote mock → real with valid participants so it stays visible in the list
+          const promoted = {
+            _id: newConversationId,
+            mock: false,
+            isGroup: false,
+            participants: [
+              {
+                _id: selectedConversation.userId,
+                username: selectedConversation.username,
+                name: selectedConversation.name,
+                profilePic: selectedConversation.userProfilePic,
+              },
+              // Optional: include current user if your API normally returns both
+              // { _id: user._id, username: user.username, name: user.name, profilePic: user.profilePic }
+            ],
+            lastMessage: {
+              text: newMessage.text || (newMessage.attachments?.length ? "Attachment" : (newMessage.img ? "Image" : "")),
+              sender: newMessage.sender,
+              updatedAt: newMessage.updatedAt || newMessage.createdAt,
+            },
+          };
+          return [promoted, ...prevConvs.filter((c) => c._id !== selectedConversation._id)];
         }
-    };
-    
-    // Function to handle sending/updating a message
-    const handleSendMessage = async (e) => {
-        e.preventDefault();
-        if (isSending) return;
 
-        setIsSending(true);
-
-        // if we are in EDIT mode
-        if (editingMessage) {
-            // Logic for UPDATING a message
-            if (messageText.trim() === editingMessage.text) {
-                // No changes, so don't send an API call
-                setIsSending(false);
-                setEditingMessage(null); // Exit editing mode
-                setMessageText("");
-                return;
-            }
-
-            try {
-                // API call to update the message
-                const response = await api.put(`/messages/update/${editingMessage._id}`, { newText: messageText });
-                const updatedMessage = response.data.data;
-
-                // Update the messages state locally
-                setMessages((prev) =>
-                    prev.map((m) => (m._id === updatedMessage._id ? updatedMessage : m))
-                );
-
-                // Update the lastMessage in the conversation list
-                setConversations((prevConvs) =>
-                    prevConvs.map((conv) =>
-                        conv._id === updatedMessage.conversationId ?
-                        { ...conv, lastMessage: { ...conv.lastMessage, text: updatedMessage.text } } :
-                        conv
-                    )
-                );
-
-                toast.success("Message updated!");
-                setEditingMessage(null); // Exit editing mode
-            } catch (error) {
-                console.error("Failed to update message:", error);
-                toast.error("Failed to update message.");
-            } finally {
-                setIsSending(false);
-                setMessageText("");
-            }
-        } else {
-            // for CREATING a new message
-            const isMessageEmpty = !messageText.trim();
-            const areFilesEmpty = selectedFiles.length === 0;
-            
-            if (isMessageEmpty && areFilesEmpty) {
-                toast.error("Message or file cannot be empty");
-                setIsSending(false);
-                return;
-            }
-
-            // Fix applied here: Check if selectedConversation exists before trying to access its properties.
-            if (!selectedConversation) {
-                toast.error("Please select a conversation first.");
-                setIsSending(false);
-                return;
-            }
-
-            try {
-                const currentConversationId = selectedConversation._id;
-                const formData = new FormData();
-                if (messageText) {
-                    formData.append('message', messageText);
-                }
-                formData.append('recipientId', selectedConversation.userId);
-                formData.append('conversationId', currentConversationId);
-                
-                // Loop through selected files and append to FormData
-                selectedFiles.forEach(file => {
-                    formData.append('files', file); // Use 'files' key
-                });
-                
-                const response = await api.post('/messages', formData);
-                const newMessage = response.data.data;
-                const newConversationId = newMessage.conversationId;
-
-                setMessages((prevMessages) => [...prevMessages, newMessage]);
-                
-                setMessageText("");
-                setSelectedFiles([]); // Clear selected files
-                setFilePreviews([]); // Clear file previews
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = null;
-                }
-
-                setConversations((prevConvs) => {
-                    let conversationFound = false;
-                    const updatedConversations = prevConvs.map((conversation) => {
-                        if (conversation._id === newConversationId) {
-                            conversationFound = true;
-                            return {
-                                ...conversation,
-                                lastMessage: {
-                                    text: newMessage.text || (newMessage.img ? "Image" : ""),
-                                    sender: newMessage.sender,
-                                },
-                            };
-                        }
-                        return conversation;
-                    });
-                    
-                    if (!conversationFound && selectedConversation.mock) {
-                        const newConversation = {
-                            ...selectedConversation,
-                            _id: newConversationId,
-                            mock: false,
-                            lastMessage: {
-                                text: newMessage.text || (newMessage.img ? "Image" : ""),
-                                sender: newMessage.sender,
-                            },
-                        };
-                        return [newConversation, ...prevConvs.filter(c => c._id !== selectedConversation._id)];
-                    }
-                    
-                    if(conversationFound) {
-                        const updatedConversation = updatedConversations.find(c => c._id === newConversationId);
-                        const otherConversations = updatedConversations.filter(c => c._id !== newConversationId);
-                        return [updatedConversation, ...otherConversations];
-                    }
-
-                    return updatedConversations;
-                });
-            } catch (error) {
-                console.error(error);
-                toast.error("Failed to send message.");
-            } finally {
-                setIsSending(false);
-            }
+        if (found) {
+          const top = updated.find((c) => c._id === newConversationId);
+          const rest = updated.filter((c) => c._id !== newConversationId);
+          return [top, ...rest];
         }
-    };
-    
-    // Function to cancel the editing process
-    const handleCancelEdit = () => {
-        setEditingMessage(null); // Clear the Recoil state
-    };
 
-    const handleInputKeyDown = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage(e);
-        }
-    };
+        return updated;
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to send message.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-    return (
-        <>
-            {/* Conditional UI for when a message is being edited */}
-            {editingMessage && (
-                <HStack w="full" bg={useColorModeValue("gray.100", "gray.700")} p={2} borderRadius="md" mb={2}>
-                    <Text fontSize="sm" color={useColorModeValue("gray.700", "gray.300")}>
-                        Editing: {editingMessage.text.length > 50 ? editingMessage.text.substring(0, 50) + "..." : editingMessage.text}
-                    </Text>
+  const handleCancelEdit = () => setEditingMessage(null);
+
+  const handleInputKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage(e);
+    }
+  };
+
+  return (
+    <>
+      {editingMessage && (
+        <HStack
+          w="full"
+          bg={useColorModeValue("gray.100", "gray.700")}
+          p={2}
+          borderRadius="md"
+          mb={2}
+        >
+          <Text fontSize="sm" color={useColorModeValue("gray.700", "gray.300")}>
+            Editing:{" "}
+            {editingMessage.text.length > 50
+              ? editingMessage.text.substring(0, 50) + "..."
+              : editingMessage.text}
+          </Text>
+          <IconButton
+            icon={<FaTimes />}
+            aria-label="Cancel edit"
+            size="xs"
+            onClick={handleCancelEdit}
+          />
+        </HStack>
+      )}
+
+      {filePreviews.length > 0 && (
+        <Grid
+          templateColumns="repeat(auto-fill, minmax(100px, 1fr))"
+          gap={2}
+          mt={4}
+          p={2}
+          bg={useColorModeValue("gray.50", "gray.800")}
+          borderRadius="md"
+          border="1px solid"
+          borderColor={useColorModeValue("gray.200", "gray.700")}
+        >
+          {filePreviews.map((url, i) => (
+            <Flex key={i} position="relative" w="full" h="100px" overflow="hidden" borderRadius="md">
+              {url && (
+                <Image src={url} alt={`preview-${i}`} objectFit="cover" w="full" h="full" />
+              )}
+              <IconButton
+                icon={<FaTimes />}
+                onClick={() => removeFile(i)}
+                position="absolute"
+                top={1}
+                right={1}
+                size="xs"
+                colorScheme="red"
+                aria-label="Remove image"
+                isRound
+              />
+            </Flex>
+          ))}
+        </Grid>
+      )}
+
+      <form onSubmit={handleSendMessage}>
+        <Flex
+          alignItems={"center"}
+          p={0}
+          bg={useColorModeValue("white", "gray.700")}
+          borderRadius="full"
+          boxShadow="xl"
+          mt={4}
+          gap={2}
+          border="1px solid"
+          borderColor={useColorModeValue("gray.200", "gray.600")}
+        >
+          <IconButton
+            onClick={() => {}}
+            aria-label="Add emoji"
+            icon={<BsEmojiSmile />}
+            bg="transparent"
+            size="lg"
+            color={useColorModeValue("gray.600", "gray.300")}
+            _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
+          />
+
+          <InputGroup flex={1}>
+            <Input
+              placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              bg="transparent"
+              border="none"
+              _focus={{ border: "none", boxShadow: "none" }}
+              py={2}
+              size="lg"
+              isDisabled={isSending}
+              ref={inputRef}
+            />
+            <InputRightElement height="100%" right="30px">
+              <Flex gap={1} alignItems="center">
+                {!editingMessage && (
+                  <>
                     <IconButton
-                        icon={<FaTimes />}
-                        aria-label="Cancel edit"
-                        size="xs"
-                        onClick={handleCancelEdit}
+                      onClick={() => fileInputRef.current?.click()}
+                      aria-label="Attach files"
+                      icon={<FaPaperclip />}
+                      bg="transparent"
+                      size="lg"
+                      color={useColorModeValue("gray.600", "gray.300")}
+                      _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
+                      isDisabled={isSending}
                     />
-                </HStack>
-            )}
-
-            {/* Display previews of multiple selected files */}
-            {filePreviews.length > 0 && (
-                <Grid
-                    templateColumns="repeat(auto-fill, minmax(100px, 1fr))"
-                    gap={2}
-                    mt={4}
-                    p={2}
-                    bg={useColorModeValue("gray.50", "gray.800")}
-                    borderRadius="md"
-                    border="1px solid"
-                    borderColor={useColorModeValue("gray.200", "gray.700")}
-                >
-                    {filePreviews.map((previewUrl, index) => (
-                        <Flex key={index} position="relative" w="full" h="100px" overflow="hidden" borderRadius="md">
-                            <Image 
-                                src={previewUrl} 
-                                alt={`preview-${index}`}
-                                objectFit="cover"
-                                w="full"
-                                h="full"
-                            />
-                            <IconButton
-                                icon={<FaTimes />}
-                                onClick={() => removeFile(index)}
-                                position="absolute"
-                                top={1}
-                                right={1}
-                                size="xs"
-                                colorScheme="red"
-                                aria-label="Remove image"
-                                isRound
-                            />
-                        </Flex>
-                    ))}
-                </Grid>
-            )}
-
-            <form onSubmit={handleSendMessage}>
-                <Flex
-                    alignItems={"center"}
-                    p={0}
-                    bg={useColorModeValue("white", "gray.700")}
-                    borderRadius="full"
-                    boxShadow="xl"
-                    mt={4}
-                    gap={2}
-                    border="1px solid"
-                    borderColor={useColorModeValue("gray.200", "gray.600")}
-                >
                     <IconButton
-                        onClick={() => console.log("Emoji clicked")} // Placeholder for emoji functionality
-                        aria-label="Add emoji"
-                        icon={<BsEmojiSmile />}
-                        bg="transparent"
-                        size="lg"
-                        color={useColorModeValue("gray.600", "gray.300")}
-                        _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
+                      type="submit"
+                      aria-label="Send message"
+                      icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
+                      bg={buttonBg}
+                      color="white"
+                      _hover={{ bg: buttonHoverBg }}
+                      isRound
+                      size="md"
+                      isDisabled={isSending || (!messageText.trim() && selectedFiles.length === 0)}
+                      boxShadow="md"
                     />
-                    <InputGroup flex={1}>
-                        <Input
-                            placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
-                            value={messageText}
-                            onChange={(e) => setMessageText(e.target.value)}
-                            onKeyDown={handleInputKeyDown}
-                            bg="transparent"
-                            border="none"
-                            _focus={{
-                                border: "none",
-                                boxShadow: "none",
-                            }}
-                            py={2}
-                            size="lg"
-                            isDisabled={isSending}
-                            ref={inputRef}
-                        />
-                        <InputRightElement height="100%" right="30px">
-                            <Flex gap={1} alignItems="center">
-                                {/* Hide the attachment and send buttons when editing a text message */}
-                                {!editingMessage && (
-                                    <>
-                                        <IconButton
-                                            onClick={() => fileInputRef.current.click()}
-                                            aria-label="Attach files"
-                                            icon={<FaPaperclip />}
-                                            bg="transparent"
-                                            size="lg"
-                                            color={useColorModeValue("gray.600", "gray.300")}
-                                            _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
-                                            isDisabled={isSending}
-                                        />
-                                        <IconButton
-                                            type="submit"
-                                            aria-label="Send message"
-                                            icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
-                                            bg={buttonBg}
-                                            color="white"
-                                            _hover={{ bg: buttonHoverBg }}
-                                            isRound={true}
-                                            size="md"
-                                            isDisabled={isSending || (!messageText.trim() && selectedFiles.length === 0)}
-                                            boxShadow="md"
-                                        />
-                                    </>
-                                )}
-                                {/* For editing, show only the 'Done' button */}
-                                {editingMessage && (
-                                    <IconButton
-                                        type="submit"
-                                        aria-label="Update message"
-                                        icon={isSending ? <Spinner size="sm" color="white" /> : <BsCheckLg />}
-                                        bg={buttonBg}
-                                        color="white"
-                                        _hover={{ bg: buttonHoverBg }}
-                                        isRound={true}
-                                        size="md"
-                                        isDisabled={isSending || !messageText.trim()}
-                                        boxShadow="md"
-                                    />
-                                )}
-                            </Flex>
-                        </InputRightElement>
-                    </InputGroup>
-                    <Input type="file" multiple hidden ref={fileInputRef} onChange={handleFileChange} />
-                </Flex>
-            </form>
-        </>
-    );
+                  </>
+                )}
+
+                {editingMessage && (
+                  <IconButton
+                    type="submit"
+                    aria-label="Update message"
+                    icon={isSending ? <Spinner size="sm" color="white" /> : <BsCheckLg />}
+                    bg={buttonBg}
+                    color="white"
+                    _hover={{ bg: buttonHoverBg }}
+                    isRound
+                    size="md"
+                    isDisabled={isSending || !messageText.trim()}
+                    boxShadow="md"
+                  />
+                )}
+              </Flex>
+            </InputRightElement>
+          </InputGroup>
+
+          <Input type="file" multiple hidden ref={fileInputRef} onChange={handleFileChange} />
+        </Flex>
+      </form>
+    </>
+  );
 };
 
 export default MessageInput;
