@@ -17,13 +17,14 @@ import {
     useColorModeValue,
     HStack,
     Text,
+    Button,
+    Grid,
 } from "@chakra-ui/react";
 import { IoSendSharp } from "react-icons/io5";
 import { BsEmojiSmile, BsCheckLg } from "react-icons/bs";
 import { FaPaperclip, FaTimes } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import usePreviewImg from "../hooks/usePreviewImg";
 import { selectedConversationAtom, conversationsAtom, messagesAtom, editingMessageAtom } from '../atoms/messageAtom';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import userAtom from '../atoms/userAtom';
@@ -39,23 +40,23 @@ const MessageInput = ({ setMessages }) => {
     // State for the message input field content
     const [messageText, setMessageText] = useState("");
     // Recoil state for the currently selected conversation
-    const [selectedConversation] = useRecoilState(selectedConversationAtom);
+    const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
     // Recoil setter for updating the conversation list
     const setConversations = useSetRecoilState(conversationsAtom);
     // Recoil state for the current user
     const user = useRecoilValue(userAtom);
     // Recoil state to track the message being edited
     const [editingMessage, setEditingMessage] = useRecoilState(editingMessageAtom);
+    
+    // States for handling multiple file uploads
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [filePreviews, setFilePreviews] = useState([]);
+    const [isSending, setIsSending] = useState(false);
+    
     // useRef to link to the hidden file input
-    const imageRef = useRef(null);
+    const fileInputRef = useRef(null);
     // useRef for the message input field to set focus
     const inputRef = useRef(null);
-    // useDisclosure hook for the image preview modal
-    const { isOpen, onOpen, onClose } = useDisclosure();
-    // Custom hook to handle image preview logic
-    const { handleImageChange, imgUrl, setImgUrl } = usePreviewImg();
-    // State for the loading status during API calls
-    const [isSending, setIsSending] = useState(false);
 
     // Dynamic colors for Light/Dark mode
     const inputBg = useColorModeValue("white", "gray.600");
@@ -71,10 +72,46 @@ const MessageInput = ({ setMessages }) => {
             }
         } else {
             setMessageText("");
-            setImgUrl(""); // Clear any attached image when not editing
         }
-    }, [editingMessage, setImgUrl]);
+        // This effect will run on initial render and whenever editingMessage changes.
+        // It clears the input field and focuses it when editing is active.
+    }, [editingMessage]);
 
+    // Function to handle file selection
+    const handleFileChange = (e) => {
+        const files = Array.from(e.target.files);
+        setSelectedFiles(files);
+
+        // Create URLs for file previews
+        const newPreviews = files.map(file => {
+            // Check for image type
+            if (file.type.startsWith('image/')) {
+                return URL.createObjectURL(file);
+            }
+            // For non-image files, you could return a placeholder or an icon
+            return null; // For now, we only preview images
+        });
+        setFilePreviews(newPreviews);
+    };
+
+    // Function to remove a selected file
+    const removeFile = (indexToRemove) => {
+        // Filter out the file to be removed
+        const newFiles = selectedFiles.filter((_, index) => index !== indexToRemove);
+        setSelectedFiles(newFiles);
+        
+        // Remove the corresponding preview URL
+        const newPreviews = filePreviews.filter((_, index) => index !== indexToRemove);
+        setFilePreviews(newPreviews);
+        
+        // If all files are removed, clear the input value to allow re-selection of the same files
+        if (newFiles.length === 0) {
+            if (fileInputRef.current) {
+                fileInputRef.current.value = null;
+            }
+        }
+    };
+    
     // Function to handle sending/updating a message
     const handleSendMessage = async (e) => {
         e.preventDefault();
@@ -82,7 +119,7 @@ const MessageInput = ({ setMessages }) => {
 
         setIsSending(true);
 
-        //  if we are in EDIT mode
+        // if we are in EDIT mode
         if (editingMessage) {
             // Logic for UPDATING a message
             if (messageText.trim() === editingMessage.text) {
@@ -99,7 +136,7 @@ const MessageInput = ({ setMessages }) => {
                 const updatedMessage = response.data.data;
 
                 // Update the messages state locally
-                setMessages((prev) => 
+                setMessages((prev) =>
                     prev.map((m) => (m._id === updatedMessage._id ? updatedMessage : m))
                 );
 
@@ -124,10 +161,17 @@ const MessageInput = ({ setMessages }) => {
         } else {
             // for CREATING a new message
             const isMessageEmpty = !messageText.trim();
-            const isImageEmpty = !imgUrl;
+            const areFilesEmpty = selectedFiles.length === 0;
             
-            if (isMessageEmpty && isImageEmpty) {
-                toast.error("Message or image cannot be empty");
+            if (isMessageEmpty && areFilesEmpty) {
+                toast.error("Message or file cannot be empty");
+                setIsSending(false);
+                return;
+            }
+
+            // Fix applied here: Check if selectedConversation exists before trying to access its properties.
+            if (!selectedConversation) {
+                toast.error("Please select a conversation first.");
                 setIsSending(false);
                 return;
             }
@@ -141,10 +185,10 @@ const MessageInput = ({ setMessages }) => {
                 formData.append('recipientId', selectedConversation.userId);
                 formData.append('conversationId', currentConversationId);
                 
-                const imageFile = imageRef.current.files[0];
-                if (imageFile) {
-                    formData.append('image', imageFile); 
-                }
+                // Loop through selected files and append to FormData
+                selectedFiles.forEach(file => {
+                    formData.append('files', file); // Use 'files' key
+                });
                 
                 const response = await api.post('/messages', formData);
                 const newMessage = response.data.data;
@@ -153,11 +197,11 @@ const MessageInput = ({ setMessages }) => {
                 setMessages((prevMessages) => [...prevMessages, newMessage]);
                 
                 setMessageText("");
-                setImgUrl("");
-                if (imageRef.current) {
-                    imageRef.current.value = null;
+                setSelectedFiles([]); // Clear selected files
+                setFilePreviews([]); // Clear file previews
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = null;
                 }
-                onClose();
 
                 setConversations((prevConvs) => {
                     let conversationFound = false;
@@ -210,10 +254,6 @@ const MessageInput = ({ setMessages }) => {
         setEditingMessage(null); // Clear the Recoil state
     };
 
-    const handleImageOpen = () => {
-        imageRef.current.click();
-    };
-
     const handleInputKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -236,6 +276,43 @@ const MessageInput = ({ setMessages }) => {
                         onClick={handleCancelEdit}
                     />
                 </HStack>
+            )}
+
+            {/* Display previews of multiple selected files */}
+            {filePreviews.length > 0 && (
+                <Grid
+                    templateColumns="repeat(auto-fill, minmax(100px, 1fr))"
+                    gap={2}
+                    mt={4}
+                    p={2}
+                    bg={useColorModeValue("gray.50", "gray.800")}
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor={useColorModeValue("gray.200", "gray.700")}
+                >
+                    {filePreviews.map((previewUrl, index) => (
+                        <Flex key={index} position="relative" w="full" h="100px" overflow="hidden" borderRadius="md">
+                            <Image 
+                                src={previewUrl} 
+                                alt={`preview-${index}`}
+                                objectFit="cover"
+                                w="full"
+                                h="full"
+                            />
+                            <IconButton
+                                icon={<FaTimes />}
+                                onClick={() => removeFile(index)}
+                                position="absolute"
+                                top={1}
+                                right={1}
+                                size="xs"
+                                colorScheme="red"
+                                aria-label="Remove image"
+                                isRound
+                            />
+                        </Flex>
+                    ))}
+                </Grid>
             )}
 
             <form onSubmit={handleSendMessage}>
@@ -278,70 +355,54 @@ const MessageInput = ({ setMessages }) => {
                         />
                         <InputRightElement height="100%" right="30px">
                             <Flex gap={1} alignItems="center">
-                                {/* Hide the image attachment button while editing */}
+                                {/* Hide the attachment and send buttons when editing a text message */}
                                 {!editingMessage && (
-                                    <IconButton
-                                        onClick={handleImageOpen}
-                                        aria-label="Attach image"
-                                        icon={<FaPaperclip />}
-                                        bg="transparent"
-                                        size="lg"
-                                        color={useColorModeValue("gray.600", "gray.300")}
-                                        _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
-                                        isDisabled={isSending}
-                                    />
+                                    <>
+                                        <IconButton
+                                            onClick={() => fileInputRef.current.click()}
+                                            aria-label="Attach files"
+                                            icon={<FaPaperclip />}
+                                            bg="transparent"
+                                            size="lg"
+                                            color={useColorModeValue("gray.600", "gray.300")}
+                                            _hover={{ bg: useColorModeValue("gray.100", "gray.600") }}
+                                            isDisabled={isSending}
+                                        />
+                                        <IconButton
+                                            type="submit"
+                                            aria-label="Send message"
+                                            icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
+                                            bg={buttonBg}
+                                            color="white"
+                                            _hover={{ bg: buttonHoverBg }}
+                                            isRound={true}
+                                            size="md"
+                                            isDisabled={isSending || (!messageText.trim() && selectedFiles.length === 0)}
+                                            boxShadow="md"
+                                        />
+                                    </>
                                 )}
-                                <IconButton
-                                    type="submit"
-                                    aria-label="Send message"
-                                    icon={isSending ? <Spinner size="sm" color="white" /> : (editingMessage ? <BsCheckLg /> : <IoSendSharp />)}
-                                    bg={buttonBg}
-                                    color="white"
-                                    _hover={{ bg: buttonHoverBg }}
-                                    isRound={true}
-                                    size="md"
-                                    isDisabled={isSending || (editingMessage ? !messageText.trim() : (!messageText.trim() && !imgUrl))}
-                                    boxShadow="md"
-                                />
-                            </Flex>
-                        </InputRightElement>
-                    </InputGroup>
-                    <Input type="file" hidden ref={imageRef} onChange={handleImageChange} />
-                </Flex>
-            </form>
-
-            <Modal
-                isOpen={!!imgUrl && !editingMessage} // Ensure modal doesn't open when editing a text message
-                onClose={() => {
-                    setImgUrl("");
-                }}
-            >
-                <ModalOverlay />
-                <ModalContent>
-                    <ModalHeader></ModalHeader>
-                    <ModalCloseButton />
-                    <ModalBody>
-                        <Flex mt={5} w={"full"} direction="column" alignItems="center">
-                            <Image src={imgUrl} />
-                            <Flex justifyContent={"flex-end"} my={2} width="100%">
-                                {!isSending ? (
+                                {/* For editing, show only the 'Done' button */}
+                                {editingMessage && (
                                     <IconButton
-                                        onClick={handleSendMessage}
-                                        aria-label="Send image"
-                                        icon={<IoSendSharp size={24} />}
-                                        isRound={true}
+                                        type="submit"
+                                        aria-label="Update message"
+                                        icon={isSending ? <Spinner size="sm" color="white" /> : <BsCheckLg />}
                                         bg={buttonBg}
                                         color="white"
                                         _hover={{ bg: buttonHoverBg }}
+                                        isRound={true}
+                                        size="md"
+                                        isDisabled={isSending || !messageText.trim()}
+                                        boxShadow="md"
                                     />
-                                ) : (
-                                    <Spinner size={"md"} />
                                 )}
                             </Flex>
-                        </Flex>
-                    </ModalBody>
-                </ModalContent>
-            </Modal>
+                        </InputRightElement>
+                    </InputGroup>
+                    <Input type="file" multiple hidden ref={fileInputRef} onChange={handleFileChange} />
+                </Flex>
+            </form>
         </>
     );
 };
