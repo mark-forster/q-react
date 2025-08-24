@@ -28,3 +28,8 @@ export const editingMessageAtom = atom({
   key: "editingMessageAtom",
   default: null,
 });
+
+export const currentlyPlayingAudioIdAtom = atom({
+  key: 'currentlyPlayingAudioIdAtom',
+  default: null, // Default is null, meaning no audio is playing
+});

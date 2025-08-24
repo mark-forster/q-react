@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Flex,
   Box,
@@ -18,21 +18,15 @@ import {
   HStack,
   useColorModeValue,
   Checkbox,
-  Stack,
   Tooltip,
-  Image,
-  Skeleton,
-  useToast, // Added useToast for user feedback
-} from "@chakra-ui/react";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-  PopoverBody,
   IconButton,
+  useToast,
 } from "@chakra-ui/react";
+import { Popover, PopoverTrigger, PopoverContent, PopoverBody } from "@chakra-ui/react";
 import { SearchIcon } from "@chakra-ui/icons";
 import { BsCheckAll } from "react-icons/bs";
+import { CiMenuKebab } from "react-icons/ci";
+import { FaEdit, FaForward, FaTrash } from "react-icons/fa";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import {
   selectedConversationAtom,
@@ -41,105 +35,36 @@ import {
 } from "../atoms/messageAtom";
 import userAtom from "../atoms/userAtom";
 import moment from "moment";
-import { CiMenuKebab } from "react-icons/ci";
-import { FaEdit, FaForward, FaTrash } from "react-icons/fa";
 import useDeleteMessage from "../hooks/useDeleteMessage";
 import axios from "axios";
+import AttachmentDisplay from "./AttachmentDisplay";
 
-// Create an axios instance here to use VITE_API_URL consistently.
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
 
-/**
- * A component to display different types of attachments.
- * This is now a self-contained component for better organization.
- */
-const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded }) => {
-  switch (attachment.type) {
-    case 'image':
-      return (
-        <Box mt={1} w={"200px"} position="relative">
-          {!imgLoaded && <Skeleton w={"200px"} h={"200px"} />}
-          <Image
-            src={attachment.url}
-            alt="Message image"
-            borderRadius={4}
-            onLoad={() => setImgLoaded(true)}
-            style={{ display: imgLoaded ? "block" : "none" }}
-          />
-        </Box>
-      );
-    case 'video':
-      return (
-        <Box mt={1} w={"200px"} position="relative">
-          <video controls src={attachment.url} style={{ width: "100%", borderRadius: "4px" }} />
-        </Box>
-      );
-    case 'audio':
-      return (
-        <Box mt={1}>
-          <audio controls src={attachment.url} style={{ width: "100%" }} />
-        </Box>
-      );
-    case 'file':
-      return (
-        <Flex alignItems="center" p={2} bg={useColorModeValue("gray.100", "gray.700")} borderRadius="md" mt={1}>
-          <Text fontSize="sm" isTruncated maxW={"200px"}>{attachment.name}</Text>
-          <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-            <Button size="xs" ml={2}>Download</Button>
-          </a>
-        </Flex>
-      );
-    default:
-      return null;
-  }
-};
-
-/**
- * A modal component for forwarding messages.
- * This separation makes the Message component cleaner and more focused.
- */
-const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
+/** Forward modal */
+const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations }) => {
   const toast = useToast();
-  const conversations = useRecoilValue(conversationsAtom);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
 
-  useEffect(() => {
-    const allConversations = conversations || [];
-    
-    if (searchQuery.trim() === "") {
-      const convParticipants = allConversations.map((conv) => conv.participants[0]);
-      setFilteredUsers(convParticipants);
-    } else {
-      const searchResults = allConversations
-        .filter((conv) => {
-          const participant = conv.participants[0];
-          if (!participant) return false;
-          return (
-            participant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            participant.username.toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        })
-        .map((conv) => conv.participants[0]);
+  const participantsFromConvs = (convs) =>
+    (convs || []).map((c) => c?.participants?.[0]).filter(Boolean);
 
-      setFilteredUsers(searchResults);
-    }
-  }, [searchQuery, conversations]);
+  const filteredUsers = participantsFromConvs(conversations).filter((u) => {
+    if (!u) return false;
+    const q = searchQuery.toLowerCase();
+    return (
+      (u.name || "").toLowerCase().includes(q) ||
+      (u.username || "").toLowerCase().includes(q)
+    );
+  });
 
-  const handleUserSelect = (userId) => {
-    setSelectedUsers((prev) => {
-      if (prev.includes(userId)) {
-        return prev.filter((id) => id !== userId);
-      } else {
-        return [...prev, userId];
-      }
-    });
-  };
+  const toggleUser = (id) =>
+    setSelectedUsers((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSend = async () => {
     try {
@@ -148,17 +73,16 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
       });
       toast({
         title: "Message forwarded.",
-        description: "The message has been successfully forwarded.",
         status: "success",
         duration: 3000,
         isClosable: true,
       });
       onClose();
     } catch (error) {
-      console.error("Error forwarding message:", error.response?.data?.error || error.message);
+      console.error("Error forwarding message:", error);
       toast({
         title: "Error forwarding message.",
-        description: error.response?.data?.error || "An unknown error occurred.",
+        description: error?.response?.data?.error || "Unknown error",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -174,22 +98,18 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
         <ModalBody>
           <Box mb={4}>
             <Text mb={2} fontWeight="medium">
-              Message to forward:
+              Message:
             </Text>
-            <Box
-              p={2}
-              bg={useColorModeValue("gray.100", "gray.700")}
-              borderRadius="md"
-            >
+            <Box p={2} bg={useColorModeValue("gray.100", "gray.700")} borderRadius="md">
               <Text>{messageToForward?.text}</Text>
-              {messageToForward?.attachments && messageToForward.attachments.length > 0 && (
-                messageToForward.attachments.map((attachment, index) => (
-                  <AttachmentDisplay key={index} attachment={attachment} />
-                ))
-              )}
+              {messageToForward?.attachments?.length > 0 &&
+                messageToForward.attachments.map((att, i) => (
+                  <AttachmentDisplay key={i} attachment={att} />
+                ))}
             </Box>
           </Box>
-          <InputGroup mb={4}>
+
+          <InputGroup mb={3}>
             <InputLeftElement pointerEvents="none">
               <SearchIcon color="gray.300" />
             </InputLeftElement>
@@ -199,25 +119,30 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </InputGroup>
+
           <VStack spacing={2} align="stretch" maxH="40vh" overflowY="auto">
             {filteredUsers.length > 0 ? (
-              filteredUsers.map((user) => (
+              filteredUsers.map((u) => (
                 <HStack
-                  key={user._id}
+                  key={u._id}
                   p={2}
                   borderRadius="md"
                   _hover={{ bg: useColorModeValue("gray.100", "gray.700") }}
                   cursor="pointer"
-                  onClick={() => handleUserSelect(user._id)}
-                  bg={selectedUsers.includes(user._id) ? useColorModeValue("blue.50", "blue.900") : "transparent"}
+                  onClick={() => toggleUser(u._id)}
+                  bg={
+                    selectedUsers.includes(u._id)
+                      ? useColorModeValue("blue.50", "blue.900")
+                      : "transparent"
+                  }
                 >
                   <Checkbox
-                    isChecked={selectedUsers.includes(user._id)}
-                    onChange={() => handleUserSelect(user._id)}
+                    isChecked={selectedUsers.includes(u._id)}
+                    onChange={() => toggleUser(u._id)}
                     colorScheme="blue"
                   />
-                  <Avatar src={user.profilePic?.url} name={user.name} size="sm" />
-                  <Text>{user.name}</Text>
+                  <Avatar src={u?.profilePic?.url} name={u?.name} size="sm" />
+                  <Text>{u?.name}</Text>
                 </HStack>
               ))
             ) : (
@@ -228,12 +153,7 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
           </VStack>
         </ModalBody>
         <ModalFooter>
-          <Button
-            colorScheme="blue"
-            mr={3}
-            onClick={handleSend}
-            isDisabled={selectedUsers.length === 0}
-          >
+          <Button colorScheme="blue" mr={3} onClick={handleSend} isDisabled={!selectedUsers.length}>
             Send To ({selectedUsers.length})
           </Button>
           <Button variant="ghost" onClick={onClose}>
@@ -248,11 +168,11 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward }) => {
 const Message = ({ ownMessage, message }) => {
   const selectedConversation = useRecoilValue(selectedConversationAtom);
   const user = useRecoilValue(userAtom);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const conversations = useRecoilValue(conversationsAtom);
   const { deleteMessage, loading } = useDeleteMessage();
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
-  
-  // State for the forwarding modal
+
+  const [imgLoaded, setImgLoaded] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
   const [messageToForward, setMessageToForward] = useState(null);
 
@@ -262,33 +182,23 @@ const Message = ({ ownMessage, message }) => {
   const timestampColor = useColorModeValue("gray.500", "gray.400");
   const menuIconColor = useColorModeValue("gray.600", "gray.300");
 
-  if (!message.text && !message.img && (!message.attachments || message.attachments.length === 0)) {
+  if (!message?.text && !message?.img && (!message?.attachments || message.attachments.length === 0)) {
     return null;
   }
 
-  const handleEdit = () => {
-    setEditingMessage(message);
-  };
-
+  const handleEdit = () => setEditingMessage(message);
   const handleForward = () => {
     setMessageToForward(message);
     setIsForwardModalOpen(true);
   };
-
-  const handleCloseForwardModal = () => {
-    setIsForwardModalOpen(false);
-    setMessageToForward(null);
-  };
-
   const handleDelete = async () => {
     if (loading) return;
     await deleteMessage(message._id);
   };
 
-  // Common JSX for the popover menu icons
   const menuIcons = (
     <HStack spacing={2}>
-      {ownMessage && !message.img && (
+      {ownMessage && !message?.img && (
         <Tooltip label="Edit" hasArrow placement="top" openDelay={150}>
           <IconButton
             icon={<FaEdit />}
@@ -324,10 +234,15 @@ const Message = ({ ownMessage, message }) => {
     </HStack>
   );
 
+  const Bubble = ({ children, align = "flex-start" }) => (
+    <Flex gap={1} alignItems="center" direction="column" alignSelf={align}>
+      {children}
+    </Flex>
+  );
+
   return (
     <>
       {ownMessage ? (
-        // Own message display
         <Flex gap={2} alignSelf="flex-end" alignItems="flex-end">
           <Flex gap={1} alignItems="center">
             <Popover placement="top-end">
@@ -346,53 +261,62 @@ const Message = ({ ownMessage, message }) => {
                 <PopoverBody p={2}>{menuIcons}</PopoverBody>
               </PopoverContent>
             </Popover>
-            <Flex direction="column" alignItems="flex-end">
-              {message.text && (
-                <Flex bg={ownMessageBgColor} p={2} borderRadius={"md"} alignItems="center">
-                  <Text color={"white"} wordBreak="break-word" whiteSpace="pre-wrap">
+            <Bubble align="flex-end">
+              {message?.text && (
+                <Flex bg={ownMessageBgColor} p={2} borderRadius="md" alignItems="center" maxW="70vw">
+                  <Text color="white" wordBreak="break-word" whiteSpace="pre-wrap">
                     {message.text}
                   </Text>
                 </Flex>
               )}
-              {message.attachments && message.attachments.length > 0 && (
-                message.attachments.map((attachment, index) => (
-                  <AttachmentDisplay key={index} attachment={attachment} imgLoaded={imgLoaded} setImgLoaded={setImgLoaded} />
-                ))
-              )}
+              {message?.attachments?.length > 0 &&
+                message.attachments.map((att, idx) => (
+                  <AttachmentDisplay
+                    key={idx}
+                    attachment={att}
+                    imgLoaded={imgLoaded}
+                    setImgLoaded={setImgLoaded}
+                    messageId={message._id}
+                  />
+                ))}
               <Flex mt={1} alignItems="center">
                 <Text fontSize="xs" color={timestampColor}>
-                  {moment(message.updatedAt).format("h:mm A")}
+                  {moment(message?.updatedAt || message?.createdAt).format("h:mm A")}
                 </Text>
-                <Box ml={1} color={message.seen ? "cyan.400" : "gray.300"} fontWeight={"bold"}>
+                <Box ml={1} color={Array.isArray(message?.seenBy) && message.seenBy.length > 1 ? "cyan.400" : "gray.300"} fontWeight="bold">
                   <BsCheckAll size={16} />
                 </Box>
               </Flex>
-            </Flex>
+            </Bubble>
           </Flex>
-          <Avatar src={user.profilePic.url} w={8} h={8} />
+          <Avatar src={user?.profilePic?.url} w={8} h={8} />
         </Flex>
       ) : (
-        // Other user's message display
         <Flex gap={2} alignSelf="flex-start" alignItems="flex-end">
-          <Avatar src={selectedConversation.userProfilePic?.url || selectedConversation.userProfilePic?.url} w={8} h={8} />
+          <Avatar src={selectedConversation?.userProfilePic?.url} w={8} h={8} />
           <Flex gap={1} alignItems="center">
-            <Flex direction="column" alignItems="flex-start">
-              {message.text && (
-                <Flex bg={otherMessageBgColor} p={2} borderRadius={"md"} alignItems="center">
+            <Bubble align="flex-start">
+              {message?.text && (
+                <Flex bg={otherMessageBgColor} p={2} borderRadius="md" alignItems="center" maxW="70vw">
                   <Text color={otherMessageTextColor} wordBreak="break-word" whiteSpace="pre-wrap">
                     {message.text}
                   </Text>
                 </Flex>
               )}
-              {message.attachments && message.attachments.length > 0 && (
-                message.attachments.map((attachment, index) => (
-                  <AttachmentDisplay key={index} attachment={attachment} imgLoaded={imgLoaded} setImgLoaded={setImgLoaded} />
-                ))
-              )}
+              {message?.attachments?.length > 0 &&
+                message.attachments.map((att, idx) => (
+                  <AttachmentDisplay
+                    key={idx}
+                    attachment={att}
+                    imgLoaded={imgLoaded}
+                    setImgLoaded={setImgLoaded}
+                    messageId={message._id}
+                  />
+                ))}
               <Text fontSize="xs" color={timestampColor} mt={1}>
-                {moment(message.updatedAt).format("h:mm A")}
+                {moment(message?.updatedAt || message?.createdAt).format("h:mm A")}
               </Text>
-            </Flex>
+            </Bubble>
             <Popover placement="top-start">
               <PopoverTrigger>
                 <IconButton
@@ -400,7 +324,7 @@ const Message = ({ ownMessage, message }) => {
                   aria-label="Message menu"
                   size="xs"
                   variant="ghost"
-                  color={menuIconColor}
+                  color={useColorModeValue("gray.600", "gray.300")}
                   mt="-16px"
                 />
               </PopoverTrigger>
@@ -412,16 +336,19 @@ const Message = ({ ownMessage, message }) => {
         </Flex>
       )}
 
-      {/* The new dedicated forward modal component */}
       {messageToForward && (
         <ForwardMessageModal
           isOpen={isForwardModalOpen}
-          onClose={handleCloseForwardModal}
+          onClose={() => {
+            setIsForwardModalOpen(false);
+            setMessageToForward(null);
+          }}
           messageToForward={messageToForward}
+          conversations={conversations}
         />
       )}
     </>
   );
 };
-
+ 
 export default Message;
