@@ -84,12 +84,37 @@ const ChatPage = () => {
   const [messages, setMessages] = useRecoilState(messagesAtom);
 
   const { socket, onlineUsers } = useSocket();
+  const bg = useColorModeValue("gray.100", "gray.700");
+
+  useEffect(() => {
+    if (socket) {
+      socket.on("conversationPermanentlyDeleted", ({ conversationId }) => {
+        setConversations((prev) =>
+          prev.filter((conv) => conv._id !== conversationId)
+        );
+        if (selectedConversation?._id === conversationId) {
+          setSelectedConversation(null);
+          setMessages([]);
+        }
+        toast.success("Conversation has been permanently deleted.");
+      });
+
+      return () => {
+        socket.off("conversationPermanentlyDeleted");
+      };
+    }
+  }, [socket, setConversations, setSelectedConversation, selectedConversation, setMessages]);
+
 
   useEffect(() => {
     const getConversations = async () => {
       try {
         const response = await api.get("/messages/conversations");
         let fetchedConversations = response.data.conversations;
+        
+        fetchedConversations = fetchedConversations.filter(
+          (conv) => !(conv.deletedBy && conv.deletedBy.includes(currentUser._id))
+        );
 
         fetchedConversations.sort((a, b) => {
           const aUpdatedAt = a.lastMessage?.updatedAt;
@@ -125,7 +150,7 @@ const ChatPage = () => {
       }
     };
     getConversations();
-  }, [setConversations, setSelectedConversation]);
+  }, [setConversations, setSelectedConversation, currentUser]);
 
   useEffect(() => {
     if (selectedConversation?._id) {
@@ -222,12 +247,32 @@ const ChatPage = () => {
     setSearchTerm("");
   };
 
-  //  Important: DO NOT listen for "messageDeleted" here.
-  // That event is handled inside MessageContainer where local messages state lives.
-
   const handleBackClick = () => {
     setSearchTerm("");
     setSearchedUsers([]);
+  };
+
+  const handleDeleteConversation = async (conversationId) => {
+    if (!conversationId) return;
+
+    try {
+      const response = await api.delete(`/messages/conversation/${conversationId}`);
+      if (response.status === 200) {
+        setConversations((prev) =>
+          prev.filter((conv) => conv._id !== conversationId)
+        );
+        if (selectedConversation?._id === conversationId) {
+          setSelectedConversation(null);
+          setMessages([]);
+        }
+        toast.success("Conversation deleted successfully.");
+      } else {
+        toast.error("Failed to delete the conversation.");
+      }
+    } catch (err) {
+      console.error("Error deleting conversation:", err);
+      toast.error("An error occurred while deleting the conversation.");
+    }
   };
 
   return (
@@ -290,7 +335,7 @@ const ChatPage = () => {
                 />
               </InputGroup>
             </Flex>
-
+            
             <Flex direction={"column"} gap={2} h="100%" overflowY="auto">
               {searchTerm.trim() ? (
                 searchingUser ? (
@@ -333,19 +378,20 @@ const ChatPage = () => {
                   if (!conversation?.participants || conversation.participants.length === 0) {
                     return null;
                   }
-                  const isOnline = onlineUsers.includes(conversation.participants[0]._id);
+                  const isOnline = onlineUsers.includes(conversation.participants[0]?._id);
                   return (
                     <Conversation
                       key={conversation._id}
                       conversation={conversation}
                       isOnline={isOnline}
+                      onDelete={() => handleDeleteConversation(conversation._id)}
                     />
                   );
                 })
               )}
             </Flex>
           </Flex>
-
+          
           {!selectedConversation?._id && (
             <Flex
               flex={70}

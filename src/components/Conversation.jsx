@@ -1,117 +1,113 @@
-import { Flex, useColorModeValue, useColorMode, WrapItem, Avatar, AvatarBadge, Stack, Text, Image, Box } from '@chakra-ui/react'
-import React, { useEffect, useState } from 'react'
-import { useRecoilState, useRecoilValue } from 'recoil'
-import userAtom from '../atoms/userAtom'
+import {
+  Flex, Avatar, Text, useColorModeValue, Box,
+  Menu, MenuButton, MenuList, MenuItem, IconButton, WrapItem, AvatarBadge, Stack
+} from "@chakra-ui/react";
+import { useRecoilValue, useRecoilState } from "recoil";
+import userAtom from "../atoms/userAtom";
+import { selectedConversationAtom, conversationsAtom } from "../atoms/messageAtom";
+import { CiMenuKebab } from "react-icons/ci";
 import { BsCheckAll, BsImage } from "react-icons/bs";
-import { selectedConversationAtom, conversationsAtom } from '../atoms/messageAtom';
-import { io } from "socket.io-client";
 
-// Create an axios instance here to use VITE_API_URL consistently.
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const Conversation = ({ conversation, isOnline, onDelete }) => {
+  const currentUser = useRecoilValue(userAtom);
+  const conversations = useRecoilValue(conversationsAtom);
+  const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
 
-/**
- * The component representing a single conversation item in the chat list.
- * It has been refactored to react to real-time updates.
- *
- * @param {object} props
- * @param {object} props.conversation - The conversation object.
- * @param {boolean} props.isOnline - The online status of the other user.
- */
-const Conversation = ({ conversation, isOnline }) => {
-    // Get the conversations from the global state to listen for real-time updates
-    const conversations = useRecoilValue(conversationsAtom);
-    const currentUser = useRecoilValue(userAtom);
-    const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
-    const colorMode = useColorMode();
-    
-    // Find the latest version of this conversation from the global state
-    // This ensures the component always displays the most up-to-date information,
-    // especially the last message, without needing a page refresh.
-    const latestConversation = conversations.find(c => c._id === conversation._id);
-    const user = latestConversation?.participants[0] || conversation.participants[0];
-    const lastMessage = latestConversation?.lastMessage || conversation.lastMessage;
+  // Always use the freshest version from global state (realtime updates)
+  const merged = conversations.find(c => c._id === conversation._id) || conversation;
 
-    // Determine if the current conversation is selected
-    const isSelected = selectedConversation?._id === conversation._id;
+  // Find the friend (non-current user) robustly
+  const friend = Array.isArray(merged.participants)
+    ? merged.participants.find(p => p?._id && p._id !== currentUser?._id)
+    : null;
 
-    // Define colors based on the selected state and color mode
-    const selectedBgColor = useColorModeValue("gray.700", "gray.dark");
-    const selectedTextColor = "white";
-    const defaultBgColor = useColorModeValue("white", "gray.800"); // Use a lighter default background for light mode
-    const defaultTextColor = useColorModeValue("gray.800", "white"); // Use a dark text color for light mode
+  const chatName =
+    merged.isGroup
+      ? (merged.name || "Group Chat")
+      : (friend?.name || friend?.username || "Unknown");
 
-    return (
-        <>
-            <Flex gap={4}
-                minHeight={78}
-                alignItems={"center"}
-                p={"1"}
-                // Hover effect for the conversation item
-                _hover={{
-                    cursor: "pointer",
-                    bg: selectedBgColor, // Use a consistent hover color
-                    color: selectedTextColor, // Use a consistent hover text color
-                }}
-                // Set the selected conversation when the item is clicked
-                onClick={() => setSelectedConversation({
-                    _id: conversation._id,
-                    userId: user._id,
-                    username: user.username,
-                    name: user.name,
-                    userProfilePic: user.profilePic,
-                    mock: conversation.mock
-                })}
-                // Change background color if the conversation is selected
-                bg={isSelected ? selectedBgColor : defaultBgColor}
-                color={isSelected ? selectedTextColor : defaultTextColor}
-                borderRadius={"md"}
-            >
-                <WrapItem>
-                    <Avatar
-                        size={{
-                            base: "xs",
-                            sm: "sm",
-                            md: "md",
-                        }}
-                        src={user?.profilePic.url}
-                    >
-                        {/* Badge to show online status */}
-                        {isOnline ? (
-                            <AvatarBadge boxSize='1em' bg='green.500' />
-                        ) : (
-                            <AvatarBadge boxSize='1em' bg='orange.500' />
-                        )}
-                    </Avatar>
-                </WrapItem>
-                <Stack direction={"column"} fontSize={"sm"} overflow="hidden">
-                    <Text fontWeight='700' display={"flex"} alignItems={"center"}>
-                        {user?.name}
-                    </Text>
-                    <Text fontSize={"xs"} display={"flex"} alignItems={"center"} gap={1} whiteSpace="nowrap" textOverflow="ellipsis" overflow="hidden">
-                        {/* Display seen icon for messages sent by the current user */}
-                        {lastMessage && currentUser._id === lastMessage.sender && (
-                            <BsCheckAll size={16} color={lastMessage.seen ? "blue.400" : ""} />
-                        )}
-                        {/* Display the last message, or an image icon if it's a photo */}
-                        {lastMessage?.text ? (
-                            <Text as="span">
-                                {lastMessage.text.length > 20
-                                    ? `${lastMessage.text.substring(0, 20)}...`
-                                    : lastMessage.text}
-                            </Text>
-                        ) : (
-                            lastMessage?.attachments && lastMessage?.attachments.length > 0 ? (
-                                <Box display="flex" alignItems="center" gap={1}>
-                                    <BsImage size={16} />
-                                    <Text as="span">Image</Text>
-                                </Box>
-                            ) : null
-                        )}
-                    </Text>
-                </Stack>
-            </Flex>
-        </>
-    );
+  // profilePic can be string or object with url
+  const pic = friend?.profilePic;
+  const profilePic = typeof pic === "string" ? pic : pic?.url || "";
+
+  const lastMessage = merged.lastMessage;
+  const isSelected = selectedConversation?._id === merged._id;
+
+  const selectedBg = useColorModeValue("gray.200", "gray.700");
+  const hoverBg = useColorModeValue("gray.100", "gray.600");
+  const menuBg = useColorModeValue("white", "gray.800");
+
+  const handleClick = () => {
+    setSelectedConversation({
+      _id: merged._id,
+      userId: merged.isGroup ? "group-id" : (friend?._id || ""),
+      username: merged.isGroup ? "Group Chat" : (friend?.username || friend?.name || ""),
+      name: chatName,
+      userProfilePic: profilePic,
+      mock: merged.mock,
+      isGroup: !!merged.isGroup,
+    });
+  };
+
+  return (
+    <Flex
+      gap={4}
+      alignItems="center"
+      p="2"
+      _hover={{ cursor: "pointer", bg: hoverBg, borderRadius: "md" }}
+      bg={isSelected ? selectedBg : "transparent"}
+      borderRadius="md"
+      position="relative"
+    >
+      <Flex flex={1} onClick={handleClick} alignItems="center" gap={4}>
+        <WrapItem>
+          <Avatar size={{ base: "xs", sm: "sm", md: "md" }} src={profilePic}>
+            {typeof isOnline === "boolean" && (
+              <AvatarBadge boxSize="1em" bg={isOnline ? "green.500" : "orange.500"} />
+            )}
+          </Avatar>
+        </WrapItem>
+
+        <Stack direction="column" fontSize="sm" overflow="hidden" spacing={0}>
+          <Text fontWeight={700} noOfLines={1}>{chatName}</Text>
+
+          <Text fontSize="xs" display="flex" alignItems="center" gap={1} whiteSpace="nowrap" textOverflow="ellipsis" overflow="hidden">
+            {/* Seen icon (only if current user is the sender) */}
+            {lastMessage && currentUser?._id && (currentUser._id === (lastMessage.sender || lastMessage.senderId)) && (
+              <BsCheckAll size={16} color={lastMessage.seen ? "blue.400" : undefined} />
+            )}
+
+            {/* Text preview / image badge */}
+            {lastMessage?.text
+              ? (
+                <Box as="span">
+                  {(lastMessage.text.length > 30 ? `${lastMessage.text.substring(0, 30)}...` : lastMessage.text)}
+                </Box>
+              )
+              : (Array.isArray(lastMessage?.attachments) && lastMessage.attachments.length > 0)
+                ? (
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <BsImage size={16} />
+                    <Text as="span">Image</Text>
+                  </Box>
+                )
+                : <Box as="span" color="gray.400">No messages yet</Box>
+            }
+          </Text>
+        </Stack>
+      </Flex>
+
+      {/* Optional action menu (only render if onDelete is provided) */}
+      {typeof onDelete === "function" && (
+        <Menu>
+          <MenuButton as={IconButton} icon={<CiMenuKebab />} variant="ghost" size="sm" _hover={{ bg: "transparent" }} />
+          <MenuList bg={menuBg}>
+            <MenuItem onClick={onDelete}>Delete</MenuItem>
+          </MenuList>
+        </Menu>
+      )}
+    </Flex>
+  );
 };
 
 export default Conversation;

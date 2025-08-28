@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Flex,
   Box,
@@ -19,11 +19,29 @@ import axios from "axios";
 import { useRecoilState } from "recoil";
 import { currentlyPlayingAudioIdAtom } from "../atoms/messageAtom";
 
+// ---------- API ----------
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
+
+// ---------- Small in-memory cache for signed URLs ----------
+const signedUrlCache = new Map(); // key -> { url, ts }
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function cacheGet(key) {
+  const v = signedUrlCache.get(key);
+  if (!v) return null;
+  if (Date.now() - v.ts > CACHE_TTL_MS) {
+    signedUrlCache.delete(key);
+    return null;
+  }
+  return v.url;
+}
+function cacheSet(key, url) {
+  signedUrlCache.set(key, { url, ts: Date.now() });
+}
 
 function pickPlayableAudioFormat(att) {
   const a = document.createElement("audio");
@@ -32,154 +50,200 @@ function pickPlayableAudioFormat(att) {
   if (orig) {
     const testMime =
       orig === "webm" ? 'audio/webm; codecs="opus"' :
-      orig === "ogg" ? 'audio/ogg; codecs="opus"' :
-      `audio/${orig}`;
+      orig === "ogg"  ? 'audio/ogg; codecs="opus"' :
+                        `audio/${orig}`;
     if (a.canPlayType(testMime)) return { format: orig, forceMp3: false };
   }
   if (a.canPlayType('audio/webm; codecs="opus"')) return { format: "webm", forceMp3: false };
-  if (a.canPlayType('audio/ogg; codecs="opus"')) return { format: "ogg", forceMp3: false };
-  if (a.canPlayType("audio/wav")) return { format: "wav", forceMp3: false };
-
+  if (a.canPlayType('audio/ogg; codecs="opus"'))  return { format: "ogg",  forceMp3: false };
+  if (a.canPlayType("audio/wav"))                 return { format: "wav",  forceMp3: false };
   return { format: "mp3", forceMp3: true };
 }
 
-const formatTime = (timeInSeconds) => {
-  const minutes = Math.floor(timeInSeconds / 60);
-  const seconds = Math.floor(timeInSeconds % 60);
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+const formatTime = (secs) => {
+  if (!isFinite(secs) || secs < 0) secs = 0;
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m.toString().padStart(2,"0")}:${s.toString().padStart(2,"0")}`;
 };
+
+function buildCacheKey(att, params) {
+  const pid = att?.public_id || att?.publicId || "no_public";
+  const t = att?.type || "unknown";
+  const fmt = att?.format || "none";
+  const extra = params ? JSON.stringify(params) : "";
+  return `${pid}::${t}::${fmt}::${extra}`;
+}
 
 const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) => {
   const toast = useToast();
   const [fileUrl, setFileUrl] = useState(null);
+  const [imgLoading, setImgLoading] = useState(true);
+
+  // audio controls (one-at-a-time)
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const audioRef = useRef(null);
   const [currentlyPlayingAudioId, setCurrentlyPlayingAudioId] = useRecoilState(currentlyPlayingAudioIdAtom);
 
+  // ------- Stable derived values (to avoid effect ) -------
+  const attType   = attachment?.type;
+  const attPid    = attachment?.public_id || attachment?.publicId || null;
+  const attFormat = attachment?.format;
+  const directUrl = attachment?.url || null;
+
+  // ------- Fetch (or reuse) a signed URL only when necessary -------
   useEffect(() => {
-    const fetchSignedUrl = async () => {
-      if (!attachment) return;
+    let abort = false;
+
+    async function run() {
+      // If direct URL is available for viewable types, use it directly
+      if ((attType === "image" || attType === "gif" || attType === "video") && directUrl) {
+        if (!abort) setFileUrl((prev) => (prev !== directUrl ? directUrl : prev));
+        return;
+      }
+
+      // If no public_id, fallback to whatever url is present (or null)
+      if (!attPid) {
+        if (!abort) setFileUrl((prev) => (prev !== directUrl ? directUrl : prev));
+        return;
+      }
+
+      // Build API params by type
+      let params = null;
+      if (attType === "audio") {
+        const { format, forceMp3 } = pickPlayableAudioFormat(attachment);
+        params = forceMp3
+          ? { resourceType: "video", forceMp3: "true" }
+          : { resourceType: "video", format };
+      } else if (attType === "video") {
+        params = { resourceType: "video", format: attFormat || "mp4" };
+      } else if (attType === "file") {
+        params = { resourceType: "raw", format: attFormat || "bin" };
+      } else if (attType === "image" || attType === "gif") {
+        params = { resourceType: "image", format: attFormat || undefined };
+      } else {
+        // unknown type → try raw
+        params = { resourceType: "raw", format: attFormat || "bin" };
+      }
+
+      const cacheKey = buildCacheKey(attachment, params);
+      const cached = cacheGet(cacheKey);
+      if (cached) {
+        if (!abort) setFileUrl((prev) => (prev !== cached ? cached : prev));
+        return;
+      }
 
       try {
-        if ((attachment.type === "image" || attachment.type === "gif" || attachment.type === "video") && attachment.url) {
-          setFileUrl(attachment.url);
-          return;
-        }
-
-        if (!attachment.public_id) {
-          setFileUrl(attachment?.url || null);
-          return;
-        }
-
-        if (attachment.type === "audio") {
-          const { format, forceMp3 } = pickPlayableAudioFormat(attachment);
-          const params = forceMp3
-            ? { resourceType: "video", forceMp3: "true" }
-            : { resourceType: "video", format };
-          const { data } = await api.get(`/messages/get-signed-url/${attachment.public_id}`, { params });
-          setFileUrl(data.url);
-          return;
-        }
-
-        if (attachment.type === "video") {
-          const { data } = await api.get(`/messages/get-signed-url/${attachment.public_id}`, {
-            params: { resourceType: "video", format: attachment.format || "mp4" },
-          });
-          setFileUrl(data.url);
-          return;
-        }
-
-        if (attachment.type === "file") {
-          const { data } = await api.get(`/messages/get-signed-url/${attachment.public_id}`, {
-            params: { resourceType: "raw", format: attachment.format || "bin" },
-          });
-          setFileUrl(data.url);
-          return;
-        }
-
-        if (attachment.type === "image" || attachment.type === "gif") {
-          const { data } = await api.get(`/messages/get-signed-url/${attachment.public_id}`, {
-            params: { resourceType: "image", format: attachment.format || undefined },
-          });
-          setFileUrl(data.url);
+        const { data } = await api.get(`/messages/get-signed-url/${attPid}`, { params });
+        if (abort) return;
+        if (data?.url) {
+          cacheSet(cacheKey, data.url);
+          setFileUrl((prev) => (prev !== data.url ? data.url : prev));
+        } else {
+          setFileUrl((prev) => (prev !== directUrl ? directUrl : prev));
         }
       } catch (error) {
+        if (abort) return;
         console.error("Error fetching signed URL:", error);
         toast({
-          title: "Error loading file.",
-          description: "Could not load the file. It may have expired.",
+          title: "Error while uploading file",
+          description: "URL not found or  expired",
           status: "error",
           duration: 5000,
           isClosable: true,
         });
+        setFileUrl((prev) => (prev !== directUrl ? directUrl : prev));
       }
-    };
+    }
 
-    fetchSignedUrl();
-  }, [attachment, toast]);
-  
-  // This useEffect ensures only one audio plays at a time
+    run();
+    return () => { abort = true; };
+  }, [attType, attPid, attFormat, directUrl, toast, attachment]); //
+  // ------- Ensure only one audio plays at a time -------
   useEffect(() => {
     if (currentlyPlayingAudioId !== messageId && audioRef.current && isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     }
-  }, [currentlyPlayingAudioId, messageId]);
+  }, [currentlyPlayingAudioId, messageId, isPlaying]);
 
+  useEffect(() => {
+    return () => {
+      // component unmount - pause to avoid leaking audio
+      if (audioRef.current) {
+        try { audioRef.current.pause(); } catch {}
+      }
+    };
+  }, []);
 
-  const handlePlayPause = () => {
-    if (audioRef.current) {
+  const handlePlayPause = async () => {
+    if (!audioRef.current) return;
+    try {
       if (isPlaying) {
         audioRef.current.pause();
         setCurrentlyPlayingAudioId(null);
+        setIsPlaying(false);
       } else {
-        audioRef.current.play();
+        const playPromise = audioRef.current.play();
+        if (playPromise && typeof playPromise.then === "function") {
+          await playPromise;
+        }
         setCurrentlyPlayingAudioId(messageId);
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
+    } catch (err) {
+      console.error("Audio play error:", err);
+      toast({
+        title: "Audio ",
+        description: " autoplay policy/codec",
+        status: "warning",
+        duration: 4000,
+        isClosable: true,
+      });
     }
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
-    }
+    if (audioRef.current) setCurrentTime(audioRef.current.currentTime || 0);
   };
-
   const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      setDuration(audioRef.current.duration);
-    }
+    if (audioRef.current) setDuration(audioRef.current.duration || 0);
   };
-
   const handleSliderChange = (value) => {
     if (audioRef.current && isFinite(audioRef.current.duration)) {
       audioRef.current.currentTime = value;
       setCurrentTime(value);
     }
   };
-
   const handleAudioEnded = () => {
     setIsPlaying(false);
     setCurrentlyPlayingAudioId(null);
-  }
+  };
 
-  switch (attachment.type) {
+  // ----------- RENDER -----------
+  switch (attType) {
     case "image":
     case "gif":
       return (
         <Box mt={1} w={"220px"} position="relative">
-          <Image
-            src={fileUrl || attachment.url}
-            alt="Message image"
-            borderRadius={4}
-            onLoad={() => setImgLoaded?.(true)}
-            style={{ display: "block" }}
-            cursor="pointer"
-            onClick={() => (fileUrl || attachment.url) && window.open(fileUrl || attachment.url, "_blank")}
-          />
+          {fileUrl ? (
+            <Image
+              src={fileUrl}
+              alt="Message image"
+              borderRadius={4}
+              onLoad={() => {
+                setImgLoaded?.(true);
+                setImgLoading(false);
+              }}
+              onError={() => setImgLoading(false)}
+              style={{ display: "block", cursor: fileUrl ? "pointer" : "default" }}
+              onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
+            />
+          ) : (
+            <Skeleton height="160px" width="100%" borderRadius="4px" />
+          )}
         </Box>
       );
 
@@ -187,15 +251,20 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
       return (
         <Box mt={1} w={"240px"} position="relative">
           {fileUrl ? (
-            <video controls src={fileUrl} style={{ width: "100%", borderRadius: "4px" }} />
+            <video
+              controls
+              preload="metadata"
+              src={fileUrl}
+              style={{ width: "100%", borderRadius: "4px" }}
+            />
           ) : (
             <Skeleton height="160px" width="100%" borderRadius="4px" />
           )}
         </Box>
       );
 
-    case "audio":
-      const progressValue = duration > 0 ? (currentTime / duration) * 100 : 0;
+    case "audio": {
+      const canUse = duration && isFinite(duration);
       return (
         <Flex
           mt={1}
@@ -215,7 +284,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                 borderRadius="full"
                 colorScheme="blue"
                 onClick={handlePlayPause}
-                isDisabled={!duration || isNaN(duration)}
+                isDisabled={!canUse}
               />
               <Box flex="1" mx={2}>
                 <Slider
@@ -225,7 +294,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                   max={duration || 0}
                   step={0.1}
                   onChange={handleSliderChange}
-                  isDisabled={!duration || isNaN(duration)}
+                  isDisabled={!canUse}
                 >
                   <SliderTrack bg={useColorModeValue("blue.100", "blue.900")}>
                     <SliderFilledTrack bg="blue.500" />
@@ -234,14 +303,27 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                 </Slider>
               </Box>
               <Text fontSize="xs" color={useColorModeValue("gray.500", "gray.400")} ml={2}>
-                {duration ? formatTime(duration - currentTime) : "00:00"}
+                {formatTime((duration || 0) - (currentTime || 0))}
               </Text>
+
+              {/* hidden audio element */}
               <audio
                 ref={audioRef}
                 src={fileUrl}
+                preload="metadata"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleAudioEnded}
+                onError={() => {
+                  setIsPlaying(false);
+                  setCurrentlyPlayingAudioId(null);
+                  toast({
+                    title: "Audio",
+                    status: "error",
+                    duration: 3000,
+                    isClosable: true,
+                  });
+                }}
               />
             </>
           ) : (
@@ -249,25 +331,32 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
           )}
         </Flex>
       );
+    }
 
     case "file":
       return (
-        <Flex alignItems="center" p={2} bg={useColorModeValue("gray.100", "gray.700")} borderRadius="md" mt={1}>
+        <Flex
+          alignItems="center"
+          p={2}
+          bg={useColorModeValue("gray.100", "gray.700")}
+          borderRadius="md"
+          mt={1}
+        >
           <Text
             fontSize="sm"
             isTruncated
             maxW={"180px"}
-            cursor="pointer"
+            cursor={fileUrl ? "pointer" : "default"}
             color="blue.500"
             textDecoration="underline"
-            onClick={() => fileUrl && window.open(fileUrl, "_blank")}
+            onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
           >
-            {attachment.name || "Download"}
+            {attachment?.name || "Download"}
           </Text>
           <Button
             size="xs"
             ml={2}
-            onClick={() => fileUrl && window.open(fileUrl, "_blank")}
+            onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
             isDisabled={!fileUrl}
             leftIcon={<FaFileDownload />}
           >
@@ -281,4 +370,4 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
   }
 };
 
-export default AttachmentDisplay;
+export default React.memo(AttachmentDisplay);

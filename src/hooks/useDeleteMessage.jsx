@@ -1,10 +1,10 @@
+// hooks/useDeleteMessage.js
 import { useState } from "react";
-import { useRecoilState } from "recoil";
-import { messagesAtom } from "../atoms/messageAtom";
-import axios from "axios";
+import { useSetRecoilState } from "recoil";
+import { conversationsAtom, messagesAtom } from "../atoms/messageAtom";
 import toast from "react-hot-toast";
+import axios from "axios";
 
-// API
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
@@ -13,27 +13,37 @@ const api = axios.create({
 
 const useDeleteMessage = () => {
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useRecoilState(messagesAtom);
+  const setMessages = useSetRecoilState(messagesAtom);
+  const setConversations = useSetRecoilState(conversationsAtom);
 
-  const deleteMessage = async (messageId) => {
+  const deleteMessage = async (messageId, deleteForEveryone) => {
     setLoading(true);
-    // optimistic UI (for components that use messagesAtom)
-    const original = messages;
-    setMessages((prev) => prev.filter((m) => m._id !== messageId));
-
     try {
-      const res = await api.delete(`/messages/message/${messageId}`);
-      if (res?.status === 200) {
-        toast.success("Message deleted!");
-        // Server will emit "messageDeleted". Components that listen locally (MessageContainer) will also update.
+      if (deleteForEveryone) {
+        await api.delete(`/messages/message/${messageId}`);
+        toast.success("Message deleted for everyone.");
       } else {
-        setMessages(original);
-        toast.error(res?.data?.message || "Failed to delete message");
+        await api.delete(`/messages/message/for-me/${messageId}`);
+        toast.success("Message deleted for you.");
       }
+
+      // Update the messages state locally to remove the deleted message
+      setMessages((prevMessages) =>
+        prevMessages.filter((msg) => msg._id !== messageId)
+      );
+
+      // Check if the last message in a conversation was deleted and update the conversation list
+      setConversations((prevConversations) =>
+        prevConversations.map((conv) => {
+          if (conv.lastMessage && conv.lastMessage._id === messageId) {
+            return { ...conv, lastMessage: { text: "Message deleted" } };
+          }
+          return conv;
+        })
+      );
     } catch (error) {
-      setMessages(original);
-      console.error("Failed to delete message:", error);
-      toast.error("An error occurred. Could not delete message.");
+      console.error("Error deleting message:", error);
+      toast.error(error?.response?.data?.error || "Unknown error occurred");
     } finally {
       setLoading(false);
     }

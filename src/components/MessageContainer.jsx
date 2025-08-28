@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   Flex,
   Text,
@@ -16,20 +16,19 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import {
   selectedConversationAtom,
   conversationsAtom,
+  messagesAtom, // 💡 IMPORT THIS ATOM
 } from "../atoms/messageAtom";
 import axios from "axios";
 import userAtom from "../atoms/userAtom";
 import { useSocket } from "../context/SocketContext";
 import messageSound from "../assets/sounds/msgSound.mp3";
 
-// Create an axios instance here to use VITE_API_URL consistently.
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
 
-// Skeleton component
 const LoadingMessageSkeleton = ({ isSender }) => (
   <Flex
     gap={2}
@@ -50,8 +49,8 @@ const LoadingMessageSkeleton = ({ isSender }) => (
 
 const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
-  const [loadingMessage, setLoadingMessage] = useState(true);
-  const [messages, setMessages] = useState([]);
+  // 💡 CRITICAL FIX: Use useRecoilState instead of useState
+  const [messages, setMessages] = useRecoilState(messagesAtom); 
   const currentUser = useRecoilValue(userAtom);
   const { socket, onlineUsers } = useSocket();
   const setConversations = useSetRecoilState(conversationsAtom);
@@ -65,12 +64,10 @@ const MessageContainer = () => {
   useEffect(() => {
     const getMessages = async () => {
       if (!selectedConversation?._id) return;
-      setLoadingMessage(true);
-      setMessages([]);
+      setMessages([]); // Clear messages to show loading skeleton
 
       try {
         if (selectedConversation.mock) {
-          setLoadingMessage(false);
           return;
         }
         const response = await api.get(
@@ -79,14 +76,12 @@ const MessageContainer = () => {
         setMessages(response.data);
       } catch (error) {
         console.error(error);
-      } finally {
-        setLoadingMessage(false);
       }
     };
     getMessages();
-  }, [selectedConversation._id, selectedConversation.mock]);
+  }, [selectedConversation._id, selectedConversation.mock, setMessages]); // Add setMessages to dependencies
 
-  // Realtime: new messages + seen + deleted
+  // Realtime listeners
   useEffect(() => {
     if (!socket) return;
 
@@ -99,8 +94,6 @@ const MessageContainer = () => {
         sound.play();
         setMessages((prev) => [...prev, message]);
       }
-
-      // update conversations lastMessage snapshot & bump to top
       setConversations((prev) => {
         let found = false;
         const updated = prev.map((c) => {
@@ -134,52 +127,64 @@ const MessageContainer = () => {
       }
     };
 
-    //  handle realtime deletes right where messages live
     const handleMessageDeleted = ({ conversationId, messageId }) => {
       if (selectedConversation?._id === conversationId) {
         setMessages((prev) => prev.filter((m) => m._id !== messageId));
       }
-    };
-    // messageUpdated listener
-  const handleMessageUpdated = ({ conversationId, messageId, newText }) => {
-    //  messages state ကို update
-    if (selectedConversation?._id === conversationId) {
-      setMessages((prev) =>
-        prev.map((m) => (m._id === messageId ? { ...m, text: newText } : m))
+      setConversations((prevConvs) =>
+        prevConvs.map((c) => {
+          if (c._id !== conversationId) return c;
+          const remaining = messages.filter((m) => m._id !== messageId);
+          const lastMsg = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+
+          return {
+            ...c,
+            lastMessage: lastMsg
+              ? {
+                  text: lastMsg.text || (lastMsg.attachments?.length ? "Attachment" : ""),
+                  sender: lastMsg.sender,
+                  updatedAt: lastMsg.updatedAt || new Date().toISOString(),
+                }
+              : {},
+          };
+        })
       );
-    }
+    };
 
-    // 2) conversations list
-    setConversations((prevConvs) =>
-      prevConvs.map((c) => {
-        if (c._id !== conversationId) return c;
-        return {
-          ...c,
-          lastMessage: {
-            ...c.lastMessage,
-            text: newText,
-          },
-        };
-      })
-    );
-  };
-
-
+    const handleMessageUpdated = ({ conversationId, messageId, newText }) => {
+      if (selectedConversation?._id === conversationId) {
+        setMessages((prev) =>
+          prev.map((m) => (m._id === messageId ? { ...m, text: newText } : m))
+        );
+      }
+      setConversations((prevConvs) =>
+        prevConvs.map((c) => {
+          if (c._id !== conversationId) return c;
+          return {
+            ...c,
+            lastMessage: {
+              ...c.lastMessage,
+              text: newText,
+            },
+          };
+        })
+      );
+    };
 
     socket.on("newMessage", handleNewMessage);
     socket.on("messagesSeen", handleMessagesSeen);
     socket.on("messageDeleted", handleMessageDeleted);
-    socket.on("messageUpdated", handleMessageUpdated)
+    socket.on("messageUpdated", handleMessageUpdated);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messagesSeen", handleMessagesSeen);
       socket.off("messageDeleted", handleMessageDeleted);
-      socket.off("messageUpdated",handleMessageUpdated)
+      socket.off("messageUpdated", handleMessageUpdated);
     };
-  }, [socket, selectedConversation?._id, currentUser._id, setConversations]);
+  }, [socket, selectedConversation?._id, currentUser._id, setConversations, setMessages, messages]); // Add setMessages to dependencies
 
-  // Auto-scroll
+  // Auto-scroll to bottom
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -196,7 +201,10 @@ const MessageContainer = () => {
       <Flex w="full" h={14} alignItems="center" gap={3} px={2}>
         <Box position="relative">
           <Avatar
-            src={selectedConversation?.userProfilePic?.url || selectedConversation?.userProfilePic}
+            src={
+              selectedConversation?.userProfilePic?.url ||
+              selectedConversation?.userProfilePic
+            }
             size="md"
             name={selectedConversation?.name}
             boxShadow="md"
@@ -210,38 +218,51 @@ const MessageContainer = () => {
           </Avatar>
         </Box>
         <Flex direction="column" lineHeight="short">
-          <Text fontWeight="bold" fontSize="md" color={useColorModeValue("gray.800", "white")}>
+          <Text
+            fontWeight="bold"
+            fontSize="md"
+            color={useColorModeValue("gray.800", "white")}
+          >
             {selectedConversation?.name}
           </Text>
-          <Text fontSize="12px" mt="5px" color={isOnline ? "green.500" : "orange.400"}>
+          <Text
+            fontSize="12px"
+            mt="5px"
+            color={isOnline ? "green.500" : "orange.400"}
+          >
             {isOnline ? "Online" : "Offline"}
           </Text>
         </Flex>
       </Flex>
       <Divider />
-
-      <Flex flexDir={"column"} flex={"flexGrow"} gap={4} my={4} p={2} height={"80%"} overflowY={"auto"}>
-        {loadingMessage &&
-          [...Array(20)].map((_, i) => (
-            <LoadingMessageSkeleton key={i} isSender={i % 2 === 0} />
-          ))}
-        {!loadingMessage && messages.length === 0 && (
+      <Flex
+        flexDir={"column"}
+        flex={"flexGrow"}
+        gap={4}
+        my={4}
+        p={2}
+        height={"80%"}
+        overflowY={"auto"}
+      >
+        {messages.length === 0 && (
           <Flex alignItems="center" justifyContent="center" height="100%">
             <Text color="gray.500">No message, start a conversation</Text>
           </Flex>
         )}
-        {!loadingMessage &&
-          messages.map((message, index) => (
-            <Flex
-              key={message._id || index}
-              direction={"column"}
-              ref={messages.length - 1 === index ? messageEndRef : null}
-            >
-              <Message message={message} ownMessage={currentUser._id === message.sender} selectedConversation={selectedConversation} />
-            </Flex>
-          ))}
+        {messages.map((message, index) => (
+          <Flex
+            key={message._id || index}
+            direction={"column"}
+            ref={messages.length - 1 === index ? messageEndRef : null}
+          >
+            <Message
+              message={message}
+              ownMessage={currentUser._id === message.sender}
+              selectedConversation={selectedConversation}
+            />
+          </Flex>
+        ))}
       </Flex>
-
       <MessageInput setMessages={setMessages} />
     </Flex>
   );
