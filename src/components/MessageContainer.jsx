@@ -7,7 +7,7 @@ import {
   useColorModeValue,
   SkeletonCircle,
   Skeleton,
-  Box,
+  Box, 
   AvatarBadge,
 } from "@chakra-ui/react";
 import Message from "./Message";
@@ -16,12 +16,12 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import {
   selectedConversationAtom,
   conversationsAtom,
-  messagesAtom, // 💡 IMPORT THIS ATOM
+  messagesAtom, //
 } from "../atoms/messageAtom";
 import axios from "axios";
 import userAtom from "../atoms/userAtom";
 import { useSocket } from "../context/SocketContext";
-import messageSound from "../assets/sounds/msgSound.mp3";
+import messageSound from "../assets/sounds/msgSound.wav";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
@@ -49,7 +49,6 @@ const LoadingMessageSkeleton = ({ isSender }) => (
 
 const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
-  // 💡 CRITICAL FIX: Use useRecoilState instead of useState
   const [messages, setMessages] = useRecoilState(messagesAtom); 
   const currentUser = useRecoilValue(userAtom);
   const { socket, onlineUsers } = useSocket();

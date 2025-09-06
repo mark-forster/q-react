@@ -1,13 +1,23 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  Flex, Image, Input, InputGroup, InputRightElement, Spinner, IconButton,
-  useColorModeValue, HStack, Text, Grid
+  Flex,
+  Image,
+  Input,
+  InputGroup,
+  InputRightElement,
+  Spinner,
+  IconButton,
+  useColorModeValue,
+  HStack,
+  Text,
+  Grid, 
 } from "@chakra-ui/react";
 import { IoSendSharp } from "react-icons/io5";
 import { BsEmojiSmile, BsCheckLg } from "react-icons/bs";
-import { FaPaperclip, FaTimes, FaMicrophone, FaStopCircle } from "react-icons/fa";
+import { FaPaperclip, FaTimes, FaMicrophone, FaStopCircle, FaRegFileAlt, FaFilePdf, FaFileWord, FaFileExcel } from "react-icons/fa";
 import { IoIosPlayCircle } from "react-icons/io";
 import { GiPauseButton } from "react-icons/gi";
+import { FaFileVideo, FaFileAudio } from "react-icons/fa6";
 import toast from "react-hot-toast";
 import axios from "axios";
 import { selectedConversationAtom, conversationsAtom, editingMessageAtom } from "../atoms/messageAtom";
@@ -51,7 +61,11 @@ const MessageInput = ({ setMessages }) => {
   const [isSending, setIsSending] = useState(false);
 
   const {
-    startRecording, stopRecording, recordingBlob, isRecording, recordingTime,
+    startRecording,
+    stopRecording,
+    recordingBlob,
+    isRecording,
+    recordingTime,
   } = useAudioRecorder({
     mimeType: pickSupportedMime(),
     audioConstraints: {
@@ -66,7 +80,6 @@ const MessageInput = ({ setMessages }) => {
     },
   });
 
-  // local voice state (never push recordingBlob directly)
   const [voiceBlob, setVoiceBlob] = useState(null);
   const [audioURL, setAudioURL] = useState(null);
   const audioPlayerRef = useRef(new Audio());
@@ -102,7 +115,28 @@ const MessageInput = ({ setMessages }) => {
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     setSelectedFiles(files);
-    setFilePreviews(files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)));
+    const previews = files.map((f) => {
+      if (f.type.startsWith("image/")) {
+        return { type: "image", url: URL.createObjectURL(f), name: f.name };
+      }
+      if (f.type.startsWith("video/")) {
+        return { type: "video", name: f.name };
+      }
+      if (f.type.startsWith("audio/")) {
+        return { type: "audio", name: f.name };
+      }
+      if (f.type === "application/pdf") {
+        return { type: "pdf", name: f.name };
+      }
+      if (f.type.includes("word") || f.name.endsWith(".doc") || f.name.endsWith(".docx")) {
+        return { type: "word", name: f.name };
+      }
+      if (f.type.includes("excel") || f.name.endsWith(".xls") || f.name.endsWith(".xlsx")) {
+        return { type: "excel", name: f.name };
+      }
+      return { type: "file", name: f.name };
+    });
+    setFilePreviews(previews);
     handleRemoveAudio(); // files take precedence
   };
 
@@ -127,7 +161,6 @@ const MessageInput = ({ setMessages }) => {
     if (isSending) return;
     setIsSending(true);
 
-    // edit mode
     if (editingMessage) {
       try {
         const trimmed = messageText.trim();
@@ -169,7 +202,6 @@ const MessageInput = ({ setMessages }) => {
       return;
     }
 
-    // create mode
     const trimmed = messageText.trim();
     const hasFiles = selectedFiles.length > 0;
     const hasVoice = !!voiceBlob;
@@ -206,7 +238,6 @@ const MessageInput = ({ setMessages }) => {
 
       setMessages((prev) => [...prev, newMessage]);
 
-      // reset
       setMessageText("");
       setSelectedFiles([]);
       setFilePreviews([]);
@@ -284,7 +315,8 @@ const MessageInput = ({ setMessages }) => {
 
   const togglePlayPause = () => {
     const p = audioPlayerRef.current;
-    if (isPlaying) p.pause(); else p.play();
+    if (isPlaying) p.pause();
+    else p.play();
     setIsPlaying(!isPlaying);
   };
 
@@ -311,16 +343,29 @@ const MessageInput = ({ setMessages }) => {
         </HStack>
       )}
 
-      {/* image previews */}
+      {/* image and file previews */}
       {filePreviews.length > 0 && (
         <Grid templateColumns="repeat(auto-fill, minmax(100px, 1fr))" gap={2} mt={4} p={2}
-              bg={useColorModeValue("gray.50", "gray.800")} borderRadius="md"
-              border="1px solid" borderColor={useColorModeValue("gray.200", "gray.700")}>
-          {filePreviews.map((url, i) => (
-            <Flex key={i} position="relative" w="full" h="100px" overflow="hidden" borderRadius="md">
-              {url && <Image src={url} alt={`preview-${i}`} objectFit="cover" w="full" h="full" />}
+          bg={useColorModeValue("gray.50", "gray.800")} borderRadius="md"
+          border="1px solid" borderColor={useColorModeValue("gray.200", "gray.700")}>
+          {filePreviews.map((preview, i) => (
+            <Flex key={i} position="relative" w="full" h="100px" overflow="hidden" borderRadius="md"
+              alignItems="center" justifyContent="center" direction="column" textAlign="center" p={1}>
+              {preview.type === "image" ? (
+                <Image src={preview.url} alt={`preview-${i}`} objectFit="cover" w="full" h="full" />
+              ) : (
+                <Flex direction="column" alignItems="center" justifyContent="center" color="gray.500" h="full">
+                  {preview.type === "pdf" && <FaFilePdf size="3em" />}
+                  {preview.type === "word" && <FaFileWord size="3em" />}
+                  {preview.type === "excel" && <FaFileExcel size="3em" />}
+                  {preview.type === "video" && <FaFileVideo size="3em" />}
+                  {preview.type === "audio" && <FaFileAudio size="3em" />}
+                  {preview.type === "file" && <FaRegFileAlt size="3em" />}
+                  <Text fontSize="xs" mt={2} noOfLines={2}>{preview.name}</Text>
+                </Flex>
+              )}
               <IconButton icon={<FaTimes />} onClick={() => removeFile(i)} position="absolute" top={1} right={1}
-                          size="xs" colorScheme="red" aria-label="Remove image" isRound />
+                size="xs" colorScheme="red" aria-label="Remove image" isRound />
             </Flex>
           ))}
         </Grid>
@@ -328,10 +373,10 @@ const MessageInput = ({ setMessages }) => {
 
       <form onSubmit={handleSendMessage} style={{ width: "100%" }}>
         <Flex alignItems={"center"} p={0} bg={useColorModeValue("white", "gray.700")}
-              borderRadius="full" boxShadow="xl" mt={4} gap={2}
-              border="1px solid" borderColor={useColorModeValue("gray.200", "gray.600")}>
+          borderRadius="full" boxShadow="xl" mt={4} gap={2}
+          border="1px solid" borderColor={useColorModeValue("gray.200", "gray.600")}>
           <IconButton onClick={() => {}} aria-label="Add emoji" icon={<BsEmojiSmile />} bg="transparent" size="lg"
-                      color={useColorModeValue("gray.600", "gray.300")} _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} />
+            color={useColorModeValue("gray.600", "gray.300")} _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} />
 
           <InputGroup flex={1}>
             <Input
@@ -346,29 +391,29 @@ const MessageInput = ({ setMessages }) => {
               <Flex gap={1} alignItems="center">
                 {!editingMessage && (
                   <IconButton onClick={() => fileInputRef.current?.click()} aria-label="Attach files" icon={<FaPaperclip />}
-                              bg="transparent" size="lg" color={useColorModeValue("gray.600", "gray.300")}
-                              _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} isDisabled={isSending || isRecording} />
+                    bg="transparent" size="lg" color={useColorModeValue("gray.600", "gray.300")}
+                    _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} isDisabled={isSending || isRecording} />
                 )}
                 {!editingMessage && !messageText.trim() && !selectedFiles.length && !audioURL && (
                   <IconButton onClick={toggleRecording} aria-label={isRecording ? "Stop Recording" : "Start Recording"}
-                              icon={isRecording ? <FaStopCircle /> : <FaMicrophone />} bg="transparent" size="lg"
-                              color={isRecording ? "red.500" : useColorModeValue("gray.600", "gray.300")}
-                              _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} isDisabled={isSending} />
+                    icon={isRecording ? <FaStopCircle /> : <FaMicrophone />} bg="transparent" size="lg"
+                    color={isRecording ? "red.500" : useColorModeValue("gray.600", "gray.300")}
+                    _hover={{ bg: useColorModeValue("gray.100", "gray.600") }} isDisabled={isSending} />
                 )}
 
                 {editingMessage ? (
                   <IconButton type="submit" aria-label="Update message"
-                              icon={isSending ? <Spinner size="sm" color="white" /> : <BsCheckLg />}
-                              bg={useColorModeValue("blue.500", "blue.400")} color="white"
-                              _hover={{ bg: useColorModeValue("blue.600", "blue.500") }}
-                              isRound size="md" isDisabled={isSending || !messageText.trim()} boxShadow="md" />
+                    icon={isSending ? <Spinner size="sm" color="white" /> : <BsCheckLg />}
+                    bg={useColorModeValue("blue.500", "blue.400")} color="white"
+                    _hover={{ bg: useColorModeValue("blue.600", "blue.500") }}
+                    isRound size="md" isDisabled={isSending || !messageText.trim()} boxShadow="md" />
                 ) : (
                   (showSendBtn) && (
                     <IconButton type="submit" aria-label="Send message"
-                                icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
-                                bg={useColorModeValue("blue.500", "blue.400")} color="white"
-                                _hover={{ bg: useColorModeValue("blue.600", "blue.500") }}
-                                isRound size="md" isDisabled={isSending} boxShadow="md" />
+                      icon={isSending ? <Spinner size="sm" color="white" /> : <IoSendSharp />}
+                      bg={useColorModeValue("blue.500", "blue.400")} color="white"
+                      _hover={{ bg: useColorModeValue("blue.600", "blue.500") }}
+                      isRound size="md" isDisabled={isSending} boxShadow="md" />
                   )
                 )}
               </Flex>
