@@ -21,6 +21,7 @@ import {
   Tooltip,
   IconButton,
   Image,
+  Spinner,
 } from "@chakra-ui/react";
 import {
   Popover,
@@ -32,6 +33,7 @@ import { SearchIcon } from "@chakra-ui/icons";
 import { BsCheckAll } from "react-icons/bs";
 import { CiMenuKebab } from "react-icons/ci";
 import { FaEdit, FaForward, FaTrash } from "react-icons/fa";
+import { MdDoneAll } from "react-icons/md";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import {
   selectedConversationAtom,
@@ -52,8 +54,6 @@ const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
-
-
 
 const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) => {
   return (
@@ -241,6 +241,7 @@ const Message = ({ ownMessage, message }) => {
                     imgLoaded={imgLoaded}
                     setImgLoaded={setImgLoaded}
                     messageId={message._id}
+                    isSender={ownMessage}
                   />
                 ))}
               <Flex
@@ -254,17 +255,21 @@ const Message = ({ ownMessage, message }) => {
                     "h:mm A"
                   )}
                 </Text>
-                <Box
-                  color={
-                    Array.isArray(message?.seenBy) &&
-                    message.seenBy.length > 1
-                      ? "cyan.400"
-                      : "gray.300"
-                  }
-                  fontWeight="bold"
-                >
-                  <BsCheckAll size={16} />
-                </Box>
+                {message.status === "sending" ? (
+                  <Spinner size="xs" color="gray.300" />
+                ) : (
+                  <Box
+                    color={
+                      Array.isArray(message?.seenBy) &&
+                      message.seenBy.length > 1
+                        ? "cyan.400"
+                        : "gray.300"
+                    }
+                    fontWeight="bold"
+                  >
+                    <BsCheckAll size={16} />
+                  </Box>
+                )}
               </Flex>
             </Bubble>
           </Flex>
@@ -305,6 +310,7 @@ const Message = ({ ownMessage, message }) => {
                     imgLoaded={imgLoaded}
                     setImgLoaded={setImgLoaded}
                     messageId={message._id}
+                    isSender={ownMessage}
                   />
                 ))}
               <Flex

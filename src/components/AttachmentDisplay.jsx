@@ -34,7 +34,7 @@ const ERROR_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes for errors
 function cacheGet(key) {
   const v = signedUrlCache.get(key);
   if (!v) return null;
-  
+
   const ttl = v.error ? ERROR_CACHE_TTL_MS : CACHE_TTL_MS;
   if (Date.now() - v.ts > ttl) {
     signedUrlCache.delete(key);
@@ -72,7 +72,7 @@ const formatTime = (secs) => {
   if (!isFinite(secs) || secs < 0) secs = 0;
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
-  return `${m.toString().padStart(2,"0")}:${s.toString().padStart(2,"0")}`;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 };
 
 function buildCacheKey(att, params) {
@@ -82,9 +82,8 @@ function buildCacheKey(att, params) {
   const extra = params ? JSON.stringify(params) : "";
   return `${pid}::${t}::${fmt}::${extra}`;
 }
- 
-const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) => {
-  
+
+const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isSender }) => {
   const [fileUrl, setFileUrl] = useState(null);
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [imgLoading, setImgLoading] = useState(true);
@@ -169,11 +168,11 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
       } catch (error) {
         if (abort) return;
         console.error("Error fetching signed URL:", error);
-        
+
         // Cache the error to avoid repeated failed requests
         const errorMessage = error?.response?.data?.error || error?.message || "Unknown error";
         cacheSetError(cacheKey, errorMessage);
-        
+
         setFileUrl(directUrl);
         setDownloadUrl(directUrl);
       }
@@ -216,7 +215,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
       }
     } catch (err) {
       console.error("Audio play error:", err);
-      
+
     }
   };
 
@@ -317,10 +316,21 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
 
     case "audio": {
       const canUse = duration && isFinite(duration);
+      // Determine colors based on `isSender` prop
+      const bubbleBg = isSender ? "blue.500" : useColorModeValue("gray.200", "gray.700");
+      
+      const iconBg = useColorModeValue(isSender ? "white" : "gray.300", isSender ? "white" : "gray.600");
+      const iconColor = useColorModeValue(isSender ? "blue.500" : "black", isSender ? "blue.500" : "white");
+      
+      const sliderColor = isSender ? "white" : useColorModeValue("gray.500", "white");
+      const sliderTrackColor = isSender ? "whiteAlpha.500" : useColorModeValue("gray.400", "gray.500");
+      
+      const timeColor = isSender ? "whiteAlpha.800" : useColorModeValue("gray.500", "gray.400");
+      
       return (
         <Flex
           mt={1}
-          bg={useColorModeValue("gray.200", "gray.700")}
+          bg={bubbleBg}
           borderRadius="full"
           p={2}
           w={"260px"}
@@ -334,7 +344,11 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                 aria-label={isPlaying ? "Pause audio" : "Play audio"}
                 size="sm"
                 borderRadius="full"
-                colorScheme="blue"
+                bg={iconBg}
+                color={iconColor}
+                _hover={{
+                  bg: useColorModeValue(isSender ? "white" : "gray.400", isSender ? "white" : "gray.500"),
+                }}
                 onClick={handlePlayPause}
                 isDisabled={!canUse}
               />
@@ -348,13 +362,13 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                   onChange={handleSliderChange}
                   isDisabled={!canUse}
                 >
-                  <SliderTrack bg={useColorModeValue("blue.100", "blue.900")}>
-                    <SliderFilledTrack bg="blue.500" />
+                  <SliderTrack bg={sliderTrackColor}>
+                    <SliderFilledTrack bg={sliderColor} />
                   </SliderTrack>
-                  <SliderThumb boxSize={2} />
+                  <SliderThumb boxSize={2} bg={sliderColor} />
                 </Slider>
               </Box>
-              <Text fontSize="xs" color={useColorModeValue("gray.500", "gray.400")} ml={2}>
+              <Text fontSize="xs" color={timeColor} ml={2}>
                 {formatTime((duration || 0) - (currentTime || 0))}
               </Text>
 
@@ -369,7 +383,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId }) =
                 onError={() => {
                   setIsPlaying(false);
                   setCurrentlyPlayingAudioId(null);
-                  
                 }}
               />
             </>
