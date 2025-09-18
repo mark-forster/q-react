@@ -1,18 +1,39 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    viteStaticCopy({
+      targets: [
+        {
+          src: '_redirects',
+          dest: ''
+        }
+      ]
+    })
+  ],
+  build: {
+    sourcemap: false,
+    minify: 'terser',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['@chakra-ui/react', '@emotion/react', '@emotion/styled'],
+          utils: ['axios', 'socket.io-client', 'recoil']
+        }
+      }
+    }
+  },
   server: {
     port: 3000,
-    // Get rid of the CORS error
     proxy: {
       "/api/v1": {
-        // Use the environment variable to set the correct target URL
-        target: process.env.VITE_API_URL,
+        target: process.env.VITE_API_URL || "http://localhost:8000",
         changeOrigin: true,
-        secure: false,
+        secure: process.env.NODE_ENV === 'production',
       },
     },
   },
