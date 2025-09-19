@@ -19,6 +19,7 @@ import {
   Box,
   SkeletonCircle,
   Skeleton,
+  Spinner, // Import Spinner component
 } from "@chakra-ui/react";
 import { SearchIcon } from "@chakra-ui/icons";
 import toast from "react-hot-toast";
@@ -38,6 +39,7 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
+  const [isForwarding, setIsForwarding] = useState(false); // New state for forwarding spinner
   const [searchedUsers, setSearchedUsers] = useState([]);
   const currentUser = useRecoilValue(userAtom);
 
@@ -81,20 +83,34 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
 
   const handleSend = async () => {
     try {
+      if (selectedUsers.length === 0) {
+        toast.error("Please select at least one user.");
+        return;
+      }
+
+      setIsForwarding(true); // Start the spinner
+      
       await api.post(`/messages/message/forward/${messageToForward._id}`, {
         recipientIds: selectedUsers,
       });
+
       toast.success("Message forwarded.");
       onClose();
+      // Forward လုပ်ပြီးနောက် state ကို reset ပြုလုပ်ပါ
+      setSearchQuery("");
+      setSelectedUsers([]);
+      setSearchedUsers([]);
     } catch (error) {
       console.error("Error forwarding message:", error);
       toast.error(error?.response?.data?.error || "Unknown error");
+    } finally {
+      setIsForwarding(false); // Stop the spinner
     }
   };
 
   const usersToDisplay = searchQuery.trim()
     ? searchedUsers
-    : conversations.map(c => c.participants[0]).filter(Boolean);
+    : conversations.map(c => c.participants.find(p => p._id !== currentUser._id)).filter(Boolean);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
@@ -157,7 +173,7 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
                     colorScheme="blue"
                   />
                   <Avatar src={u?.profilePic} name={u?.name} size="sm" />
-                  <Text>{u?.name}</Text>
+                  <Text>{u?.name || u?.username}</Text>
                 </HStack>
               ))
             ) : (
@@ -172,11 +188,13 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
             colorScheme="blue"
             mr={3}
             onClick={handleSend}
-            isDisabled={!selectedUsers.length}
+            isLoading={isForwarding} // Show loading spinner
+            loadingText="Forwarding" // Change button text while loading
+            isDisabled={!selectedUsers.length || isForwarding} // Disable button while loading or no users selected
           >
             Send To ({selectedUsers.length})
           </Button>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} isDisabled={isForwarding}>
             Cancel
           </Button>
         </ModalFooter>

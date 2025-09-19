@@ -29,7 +29,6 @@ import messageSound from "../assets/sounds/msgSound.wav";
 import Message from "./Message";
 import MessageInput from "./MessageInput";
 
-// Icon imports for new header buttons
 import { FiPhone, FiVideo } from "react-icons/fi";
 import { CiMenuKebab } from "react-icons/ci";
 
@@ -58,7 +57,7 @@ const LoadingMessageSkeleton = ({ isSender }) => (
 );
 
 const MessageContainer = () => {
-    const [selectedConversation] = useRecoilState(selectedConversationAtom);
+    const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
     const [messages, setMessages] = useRecoilState(messagesAtom);
     const currentUser = useRecoilValue(userAtom);
     const { socket, onlineUsers } = useSocket();
@@ -98,41 +97,6 @@ const MessageContainer = () => {
     useEffect(() => {
         if (!socket) return;
 
-        const handleNewMessage = (message) => {
-            // Update the messages list only if the message is for the currently selected conversation.
-            if (selectedConversation?._id === message.conversationId) {
-                setMessages((prev) => [...prev, message]);
-                if (message.sender !== currentUser._id) {
-                    const sound = new Audio(messageSound);
-                    sound.play();
-                }
-            }
-
-            // Update conversations list for all users (sender and recipient)
-            setConversations((prevConvs) => {
-                const updatedConvs = prevConvs.map((conv) => {
-                    if (conv._id === message.conversationId) {
-                        return {
-                            ...conv,
-                            lastMessage: {
-                                text: message.text || (message.attachments?.length ? "Attachment" : ""),
-                                sender: message.sender,
-                                updatedAt: message.updatedAt || message.createdAt,
-                            },
-                        };
-                    }
-                    return conv;
-                });
-
-                const newMsgConv = updatedConvs.find(conv => conv._id === message.conversationId);
-                if (newMsgConv) {
-                    const otherConvs = updatedConvs.filter(conv => conv._id !== message.conversationId);
-                    return [newMsgConv, ...otherConvs];
-                }
-                return updatedConvs;
-            });
-        };
-
         const handleMessagesSeen = ({ conversationId }) => {
             if (selectedConversation?._id === conversationId) {
                 setMessages((prev) =>
@@ -144,13 +108,31 @@ const MessageContainer = () => {
                 );
             }
         };
+        
+        // 💡 UPDATED: newMessage listener in MessageContainer is removed to prevent duplication.
+        // It's already handled in ChatPage.jsx.
 
-        socket.on("newMessage", handleNewMessage);
+        const handleReceiveNewMessage = (message) => {
+            if (selectedConversation?._id === message.conversationId && message.sender !== currentUser._id) {
+                api.put(`/messages/seen/${selectedConversation._id}`)
+                    .then(() => {
+                        console.log("Messages seen status updated in real-time.");
+                    })
+                    .catch((err) => {
+                        console.error("Failed to update seen status:", err);
+                    });
+            }
+        };
+
+        // 💡 UPDATED: Only listen to 'messagesSeen' and 'newMessage' for special handling.
+        // The core 'newMessage' state update logic is in ChatPage.jsx.
         socket.on("messagesSeen", handleMessagesSeen);
+        socket.on("newMessage", handleReceiveNewMessage);
 
         return () => {
-            socket.off("newMessage", handleNewMessage);
+            // 💡 UPDATED: Remove the handleNewMessage listener.
             socket.off("messagesSeen", handleMessagesSeen);
+            socket.off("newMessage", handleReceiveNewMessage);
         };
     }, [socket, selectedConversation, setMessages, currentUser._id, setConversations]);
 

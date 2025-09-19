@@ -42,11 +42,23 @@ const ChatPage = () => {
 
     const { socket, onlineUsers } = useSocket();
 
-    // FIXED: This hook now only handles real-time events that affect the conversation list,
-    // but not the messages within a conversation.
+    useEffect(() => {
+        const updateSeenStatus = async () => {
+            if (selectedConversation?._id && currentUser?._id) {
+                try {
+                    await api.put(`/messages/seen/${selectedConversation._id}`);
+                } catch (err) {
+                    console.error("Failed to update seen status:", err);
+                }
+            }
+        };
+
+        updateSeenStatus();
+    }, [selectedConversation, currentUser]);
+
     useEffect(() => {
         if (!socket) return;
-        
+
         const handleConversationCreated = (newConversation) => {
             setConversations((prev) => {
                 const exists = prev.some((c) => c._id === newConversation._id);
@@ -69,26 +81,82 @@ const ChatPage = () => {
             toast.success("Conversation has been permanently deleted.");
         };
 
-        // This listener is moved to MessageContainer
-        // const handleNewMessage = (message) => { ... }
-
         const handleMessageEdited = (data) => {
             setMessages((prev) =>
                 prev.map((msg) => (msg._id === data.messageId ? { ...msg, text: data.newText } : msg))
             );
         };
         
+        const handleNewMessage = (message) => {
+            if (message.senderId !== currentUser._id) {
+                setConversations(prevConversations => {
+                    const updatedConversations = prevConversations.map(c => {
+                        if (c._id === message.conversationId) {
+                            return { ...c, lastMessage: message };
+                        }
+                        return c;
+                    });
+                    
+                    const updatedConv = updatedConversations.find(c => c._id === message.conversationId);
+                    const filteredConvs = updatedConversations.filter(c => c._id !== message.conversationId);
+                    
+                    if (updatedConv) {
+                           return [updatedConv, ...filteredConvs];
+                    }
+                    return updatedConversations; 
+                });
+            }
+
+            if (selectedConversation?._id === message.conversationId) {
+                setMessages(prev => [...prev, message]);
+            }
+        };
+
+        // This is the core fix to update the conversation list.
+        socket.on("messagesSeen", ({ conversationId, userId }) => {
+            if (selectedConversation?._id === conversationId) {
+                setMessages(prev => 
+                    prev.map(msg => ({ 
+                        ...msg, 
+                        seenBy: [...new Set([...(msg.seenBy || []), userId])],
+                    }))
+                );
+            }
+            
+            setConversations(prev => {
+                return prev.map(c => {
+                    if (c._id === conversationId) {
+                        if (c.lastMessage) {
+                            const updatedSeenBy = [...(c.lastMessage.seenBy || []), userId];
+                            const uniqueSeenBy = [...new Set(updatedSeenBy)];
+
+                            return {
+                                ...c,
+                                lastMessage: {
+                                    ...c.lastMessage,
+                                    seenBy: uniqueSeenBy,
+                                }
+                            };
+                        }
+                    }
+                    return c;
+                });
+            });
+        });
+
         socket.on("conversationCreated", handleConversationCreated);
         socket.on("conversationPermanentlyDeleted", handleConversationPermanentlyDeleted);
         socket.on("messageEdited", handleMessageEdited);
-
+        socket.on("newMessage", handleNewMessage);
+        
         return () => {
             socket.off("conversationCreated", handleConversationCreated);
             socket.off("conversationPermanentlyDeleted", handleConversationPermanentlyDeleted);
             socket.off("messageEdited", handleMessageEdited);
+            socket.off("newMessage", handleNewMessage);
+            socket.off("messagesSeen");
         };
-    }, [socket, selectedConversation, setConversations, setMessages]);
-
+    }, [socket, selectedConversation, setConversations, setMessages, currentUser]);
 
     useEffect(() => {
         const getConversations = async () => {
