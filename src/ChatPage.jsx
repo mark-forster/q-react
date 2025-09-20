@@ -111,38 +111,42 @@ const ChatPage = () => {
                 setMessages(prev => [...prev, message]);
             }
         };
+// Update seen status in both open messages and conversation list
+socket.on("messagesSeen", ({ conversationId, userId }) => {
+const uid = String(userId);
 
-        // This is the core fix to update the conversation list.
-        socket.on("messagesSeen", ({ conversationId, userId }) => {
-            if (selectedConversation?._id === conversationId) {
-                setMessages(prev => 
-                    prev.map(msg => ({ 
-                        ...msg, 
-                        seenBy: [...new Set([...(msg.seenBy || []), userId])],
-                    }))
-                );
-            }
-            
-            setConversations(prev => {
-                return prev.map(c => {
-                    if (c._id === conversationId) {
-                        if (c.lastMessage) {
-                            const updatedSeenBy = [...(c.lastMessage.seenBy || []), userId];
-                            const uniqueSeenBy = [...new Set(updatedSeenBy)];
 
-                            return {
-                                ...c,
-                                lastMessage: {
-                                    ...c.lastMessage,
-                                    seenBy: uniqueSeenBy,
-                                }
-                            };
-                        }
-                    }
-                    return c;
-                });
-            });
-        });
+if (selectedConversation?._id === conversationId) {
+setMessages(prev =>
+prev.map(msg => ({
+...msg,
+seenBy: Array.from(new Set([...(msg.seenBy || []).map(String), uid])),
+}))
+);
+}
+
+
+setConversations(prev => {
+return prev.map(c => {
+if (c._id !== conversationId) return c;
+if (!c.lastMessage) return c;
+
+
+const updatedSeenBy = Array.from(
+new Set([...(c.lastMessage.seenBy || []).map(String), uid])
+);
+
+
+return {
+...c,
+lastMessage: {
+...c.lastMessage,
+seenBy: updatedSeenBy,
+},
+};
+});
+});
+});
 
         socket.on("conversationCreated", handleConversationCreated);
         socket.on("conversationPermanentlyDeleted", handleConversationPermanentlyDeleted);
