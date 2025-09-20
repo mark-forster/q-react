@@ -7,7 +7,7 @@ import {
   TabList,
   Tab,
 } from "@chakra-ui/react";
-import ConversationList from "./ConversationList"; // သင်အသစ်ဖန်တီးရမယ့် component
+import ConversationList from "./ConversationList"; // 
 
 const ConversationTabs = ({
   conversations,
@@ -29,7 +29,6 @@ const ConversationTabs = ({
           (conv) => conv.lastMessage && conv.lastMessage.isRead === false
         );
       case 2: // Groups tab
-        // သင့် conversation data မှာ 'isGroup' property ရှိတယ်လို့ ယူဆပါတယ်
         return conversations.filter((conv) => conv.isGroup);
       default: // All tab
         return conversations;

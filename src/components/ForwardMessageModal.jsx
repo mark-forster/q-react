@@ -96,7 +96,6 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
 
       toast.success("Message forwarded.");
       onClose();
-      // Forward လုပ်ပြီးနောက် state ကို reset ပြုလုပ်ပါ
       setSearchQuery("");
       setSelectedUsers([]);
       setSearchedUsers([]);
