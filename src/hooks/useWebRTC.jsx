@@ -14,7 +14,7 @@ const socket = io(API_BASE, {
 
 const useWebRTC = () => {
   const user = useRecoilValue(userAtom);
-  const [stream, setStream] = useState(null);
+  const [localStream, setLocalStream] = useState(null);
   const [calling, setCalling] = useState(false);
   const [callAccepted, setCallAccepted] = useState(false);
   const [receivingCall, setReceivingCall] = useState(false);
@@ -26,21 +26,8 @@ const useWebRTC = () => {
   const peerConnection = useRef(null);
 
   useEffect(() => {
-    // 1. Get user media (camera/mic)
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(currentStream => {
-        setStream(currentStream);
-        if (userVideo.current) {
-          userVideo.current.srcObject = currentStream;
-        }
-      })
-      .catch(err => {
-        toast.error("Access to camera/microphone denied.");
-        console.error("getUserMedia error: ", err);
-      });
-
-    // 2. Listen for incoming calls
     socket.on("incomingCall", ({ signal, from, name }) => {
+      console.log(`[WebRTC] 'incomingCall' event received from user: ${name}`);
       setReceivingCall(true);
       setCaller({ id: from, name });
       setSignal(signal);
@@ -59,7 +46,6 @@ const useWebRTC = () => {
       ));
     });
 
-    // 3. Listen for call accepted
     socket.on("callAccepted", (signal) => {
       setCallAccepted(true);
       if (peerConnection.current) {
@@ -67,7 +53,6 @@ const useWebRTC = () => {
       }
     });
 
-    // 4. Listen for call ended
     socket.on("callEnded", () => {
       endCall();
       toast.error("Call ended.");
@@ -77,28 +62,40 @@ const useWebRTC = () => {
       socket.off("incomingCall");
       socket.off("callAccepted");
       socket.off("callEnded");
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [localStream]);
 
-  const startCall = (toUserId) => {
+  const startCall = async (toUserId, callType) => {
+    console.log(`[WebRTC] Initiating call to user: ${toUserId} with type: ${callType}`);
     setCalling(true);
     
-    // Create Peer Connection
+    // Get user media based on call type
+    const mediaConstraints = callType === "audio" ? { video: false, audio: true } : { video: true, audio: true };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      setLocalStream(stream);
+      if (userVideo.current) {
+        userVideo.current.srcObject = stream;
+      }
+    } catch (err) {
+      toast.error("Access to camera/microphone denied.");
+      console.error("getUserMedia error: ", err);
+      return;
+    }
+
     peerConnection.current = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' } // Public STUN server
+        { urls: 'stun:stun.l.google.com:19302' }
       ]
     });
 
-    // Add user's stream to peer connection
-    if (stream) {
-      stream.getTracks().forEach(track => peerConnection.current.addTrack(track, stream));
+    if (localStream) {
+      localStream.getTracks().forEach(track => peerConnection.current.addTrack(track, localStream));
     }
 
-    // Handle peer connection events
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("callUser", {
@@ -114,7 +111,6 @@ const useWebRTC = () => {
       partnerVideo.current.srcObject = event.streams[0];
     };
 
-    // Create and send offer
     peerConnection.current.createOffer().then(offer => {
       peerConnection.current.setLocalDescription(offer);
       socket.emit("callUser", {
@@ -126,22 +122,33 @@ const useWebRTC = () => {
     });
   };
 
-  const acceptCall = () => {
+  const acceptCall = async (callType) => {
     setCallAccepted(true);
+
+    // Get user media based on call type
+    const mediaConstraints = callType === "audio" ? { video: false, audio: true } : { video: true, audio: true };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      setLocalStream(stream);
+      if (userVideo.current) {
+        userVideo.current.srcObject = stream;
+      }
+    } catch (err) {
+      toast.error("Access to camera/microphone denied.");
+      console.error("getUserMedia error: ", err);
+      return;
+    }
     
-    // Create Peer Connection
     peerConnection.current = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' }
       ]
     });
 
-    // Add user's stream to peer connection
-    if (stream) {
-      stream.getTracks().forEach(track => peerConnection.current.addTrack(track, stream));
+    if (localStream) {
+      localStream.getTracks().forEach(track => peerConnection.current.addTrack(track, localStream));
     }
 
-    // Handle peer connection events
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("answerCall", {
@@ -155,7 +162,6 @@ const useWebRTC = () => {
       partnerVideo.current.srcObject = event.streams[0];
     };
 
-    // Set remote description and create answer
     peerConnection.current.setRemoteDescription(new RTCSessionDescription(signal)).then(() => {
       peerConnection.current.createAnswer().then(answer => {
         peerConnection.current.setLocalDescription(answer);
@@ -173,8 +179,8 @@ const useWebRTC = () => {
       peerConnection.current.close();
       peerConnection.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
     }
     setCalling(false);
     setCallAccepted(false);
@@ -192,6 +198,7 @@ const useWebRTC = () => {
     endCall,
     userVideo,
     partnerVideo,
+    acceptCall
   };
 };
 

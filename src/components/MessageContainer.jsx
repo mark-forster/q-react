@@ -1,3 +1,4 @@
+// components/MessageContainer.jsx
 import React, { useEffect, useRef, useState } from "react";
 import {
     Flex,
@@ -22,6 +23,7 @@ import {
     ModalBody,
     ModalFooter,
     Button,
+    Tooltip,
 } from "@chakra-ui/react";
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import {
@@ -152,20 +154,14 @@ const MessageContainer = () => {
         socket.on("messagesSeen", handleMessagesSeen);
         socket.on("newMessage", handleReceiveNewMessage);
 
-        // WebRTC Socket Listeners
         socket.on("incomingCall", ({ signal, from, name }) => {
             onCallModalOpen();
         });
-
-        socket.on("callAccepted", (signal) => {
-            onCallModalOpen();
-        });
-
+        
         return () => {
             socket.off("messagesSeen", handleMessagesSeen);
             socket.off("newMessage", handleReceiveNewMessage);
             socket.off("incomingCall");
-            socket.off("callAccepted");
         };
     }, [socket, selectedConversation, setMessages, currentUser._id, setConversations, onCallModalOpen]);
 
@@ -178,7 +174,12 @@ const MessageContainer = () => {
     const containerBg = useColorModeValue("white", "gray.800");
 
     const handleCallStart = (callType) => {
-        if (!selectedConversation?.userId) return;
+        // 💡 ဒီ Log ပေါ်မပေါ် စစ်ဆေးပါ။
+        console.log(`[UI] Call button clicked for call type: ${callType}`);
+        if (!selectedConversation?.userId) {
+          console.log("[UI] No user ID to call.");
+          return;
+        }
         startCall(selectedConversation.userId, callType);
         onCallModalOpen();
     };
@@ -216,20 +217,28 @@ const MessageContainer = () => {
 
                 <Flex ml={"auto"} gap={2} alignItems={"center"}>
                     {/* Call Buttons */}
-                    <IconButton
-                        icon={<FiPhone />}
-                        aria-label="Audio Call"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCallStart("audio")}
-                    />
-                    <IconButton
-                        icon={<FiVideo />}
-                        aria-label="Video Call"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCallStart("video")}
-                    />
+                    {isOnline && (
+                        <>
+                            <Tooltip label="Audio Call" hasArrow placement="bottom">
+                                <IconButton
+                                    icon={<FiPhone />}
+                                    aria-label="Audio Call"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleCallStart("audio")}
+                                />
+                            </Tooltip>
+                            <Tooltip label="Video Call" hasArrow placement="bottom">
+                                <IconButton
+                                    icon={<FiVideo />}
+                                    aria-label="Video Call"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleCallStart("video")}
+                                />
+                            </Tooltip>
+                        </>
+                    )}
                     <Menu>
                         <MenuButton
                             as={IconButton}
