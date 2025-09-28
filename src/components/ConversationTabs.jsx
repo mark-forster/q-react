@@ -7,7 +7,7 @@ import {
   TabList,
   Tab,
 } from "@chakra-ui/react";
-import ConversationList from "./ConversationList"; // 
+import ConversationList from "./ConversationList";
 
 const ConversationTabs = ({
   conversations,
@@ -26,7 +26,7 @@ const ConversationTabs = ({
     switch (tabIndex) {
       case 1: // Unread tab
         return conversations.filter(
-          (conv) => conv.lastMessage && conv.lastMessage.isRead === false
+          (conv) => conv.unreadCount > 0
         );
       case 2: // Groups tab
         return conversations.filter((conv) => conv.isGroup);

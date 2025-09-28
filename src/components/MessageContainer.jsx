@@ -15,6 +15,13 @@ import {
     MenuList,
     MenuItem,
     useToast,
+    Modal,
+    ModalOverlay,
+    ModalContent,
+    ModalHeader,
+    ModalBody,
+    ModalFooter,
+    Button,
 } from "@chakra-ui/react";
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import {
@@ -31,6 +38,8 @@ import MessageInput from "./MessageInput";
 
 import { FiPhone, FiVideo } from "react-icons/fi";
 import { CiMenuKebab } from "react-icons/ci";
+import { useDisclosure } from '@chakra-ui/react';
+import useWebRTC from "../hooks/useWebRTC";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
@@ -70,6 +79,25 @@ const MessageContainer = () => {
         selectedConversation?.userId &&
         onlineUsers.includes(selectedConversation.userId);
 
+    // Call related hooks and state
+    const {
+        isCalling,
+        isCallAccepted,
+        startCall,
+        endCall,
+        userVideo,
+        partnerVideo,
+        caller,
+        isReceivingCall,
+        acceptCall,
+    } = useWebRTC();
+
+    const { 
+        isOpen: isCallModalOpen, 
+        onOpen: onCallModalOpen, 
+        onClose: onCallModalClose 
+    } = useDisclosure();
+
     useEffect(() => {
         const getMessages = async () => {
             if (!selectedConversation?._id) return;
@@ -108,9 +136,6 @@ const MessageContainer = () => {
                 );
             }
         };
-        
-        // 💡 UPDATED: newMessage listener in MessageContainer is removed to prevent duplication.
-        // It's already handled in ChatPage.jsx.
 
         const handleReceiveNewMessage = (message) => {
             if (selectedConversation?._id === message.conversationId && message.sender !== currentUser._id) {
@@ -123,18 +148,26 @@ const MessageContainer = () => {
                     });
             }
         };
-
-        // 💡 UPDATED: Only listen to 'messagesSeen' and 'newMessage' for special handling.
-        // The core 'newMessage' state update logic is in ChatPage.jsx.
+        
         socket.on("messagesSeen", handleMessagesSeen);
         socket.on("newMessage", handleReceiveNewMessage);
 
+        // WebRTC Socket Listeners
+        socket.on("incomingCall", ({ signal, from, name }) => {
+            onCallModalOpen();
+        });
+
+        socket.on("callAccepted", (signal) => {
+            onCallModalOpen();
+        });
+
         return () => {
-            // 💡 UPDATED: Remove the handleNewMessage listener.
             socket.off("messagesSeen", handleMessagesSeen);
             socket.off("newMessage", handleReceiveNewMessage);
+            socket.off("incomingCall");
+            socket.off("callAccepted");
         };
-    }, [socket, selectedConversation, setMessages, currentUser._id, setConversations]);
+    }, [socket, selectedConversation, setMessages, currentUser._id, setConversations, onCallModalOpen]);
 
     useEffect(() => {
         if (messageEndRef.current) {
@@ -143,6 +176,17 @@ const MessageContainer = () => {
     }, [messages, loadingMessages]);
 
     const containerBg = useColorModeValue("white", "gray.800");
+
+    const handleCallStart = (callType) => {
+        if (!selectedConversation?.userId) return;
+        startCall(selectedConversation.userId, callType);
+        onCallModalOpen();
+    };
+
+    const handleEndCall = () => {
+        endCall();
+        onCallModalClose();
+    };
 
     return (
         <Flex
@@ -171,17 +215,20 @@ const MessageContainer = () => {
                 </Flex>
 
                 <Flex ml={"auto"} gap={2} alignItems={"center"}>
+                    {/* Call Buttons */}
                     <IconButton
                         icon={<FiPhone />}
                         aria-label="Audio Call"
                         variant="ghost"
                         size="sm"
+                        onClick={() => handleCallStart("audio")}
                     />
                     <IconButton
                         icon={<FiVideo />}
                         aria-label="Video Call"
                         variant="ghost"
                         size="sm"
+                        onClick={() => handleCallStart("video")}
                     />
                     <Menu>
                         <MenuButton
@@ -253,6 +300,34 @@ const MessageContainer = () => {
 
             {/* Input Field */}
             <MessageInput setMessages={setMessages} />
+
+            {/* Video Call Modal */}
+            <Modal isOpen={isCallModalOpen || isReceivingCall} onClose={handleEndCall} isCentered>
+                <ModalOverlay />
+                <ModalContent>
+                    <ModalHeader>
+                        {isReceivingCall ? `Incoming Call from ${caller.name}` : "Calling..."}
+                    </ModalHeader>
+                    <ModalBody>
+                        <Box position="relative">
+                            <video playsInline muted ref={userVideo} autoPlay style={{ width: "100%" }} />
+                            {isCallAccepted && (
+                                <video playsInline ref={partnerVideo} autoPlay style={{ width: "100%", marginTop: "10px" }} />
+                            )}
+                        </Box>
+                    </ModalBody>
+                    <ModalFooter>
+                        {isReceivingCall && !isCallAccepted && (
+                             <Button onClick={() => { acceptCall(); onCallModalOpen(); }} colorScheme="green" mr={3}>
+                                Accept
+                             </Button>
+                        )}
+                        <Button onClick={handleEndCall} colorScheme="red">
+                            {isReceivingCall && !isCallAccepted ? "Reject" : "End Call"}
+                        </Button>
+                    </ModalFooter>
+                </ModalContent>
+            </Modal>
         </Flex>
     );
 };
