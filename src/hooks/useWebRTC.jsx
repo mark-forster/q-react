@@ -3,10 +3,14 @@ import { useRecoilValue } from 'recoil';
 import toast from 'react-hot-toast';
 import userAtom from '../atoms/userAtom';
 import { useSocket } from '../context/SocketContext';
+import ringOutUrl from '../assets/sounds/msgSound.wav';
+import ringInUrl  from '../assets/sounds/incomeRing.mp3';
+const RING_OUT_URL = ringOutUrl; // caller side ringtone
+const RING_IN_URL  = ringInUrl;  // receiver side ringtone
 
 const useWebRTC = () => {
   const user = useRecoilValue(userAtom);
-  const { socket } = useSocket();        // single socket instance from context
+  const { socket } = useSocket();
 
   const [localStream, setLocalStream] = useState(null);
   const [calling, setCalling] = useState(false);
@@ -18,14 +22,45 @@ const useWebRTC = () => {
 
   const userVideo = useRef();
   const partnerVideo = useRef();
-  const partnerAudio = useRef(); // NEW: remote audio element
+  const partnerAudio = useRef();
   const peerConnection = useRef(null);
 
-  // SDP/ICE ordering helpers (kept for stability)
+  // NEW: who is the other party? (works for both caller/receiver)
+  const peerIdRef = useRef(null);
+
+  // SDP/ICE ordering helpers
   const remoteDescSetRef = useRef(false);
   const pendingRemoteICERef = useRef([]);
 
+  // Toast flood guard
+  const incomingToastLockRef = useRef(false);
+  const incomingToastIdRef = useRef(null);
+
+  // NEW: ringtones
+  const ringOutRef = useRef(null);
+  const ringInRef = useRef(null);
+
   const isSecure = typeof window !== "undefined" && window.isSecureContext;
+
+  // --- ringtone helpers ---
+  const ensureRingers = () => {
+    if (!ringOutRef.current) {
+      ringOutRef.current = new Audio(RING_OUT_URL);
+      ringOutRef.current.loop = true;
+      ringOutRef.current.preload = 'auto';
+      ringOutRef.current.volume = 1;
+    }
+    if (!ringInRef.current) {
+      ringInRef.current = new Audio(RING_IN_URL);
+      ringInRef.current.loop = true;
+      ringInRef.current.preload = 'auto';
+      ringInRef.current.volume = 1;
+    }
+  };
+  const playRingOut = () => { try { ensureRingers(); ringOutRef.current?.play(); } catch {} };
+  const stopRingOut = () => { try { ringOutRef.current?.pause(); ringOutRef.current.currentTime = 0; } catch {} };
+  const playRingIn  = () => { try { ensureRingers(); ringInRef.current?.play(); } catch {} };
+  const stopRingIn  = () => { try { ringInRef.current?.pause(); ringInRef.current.currentTime = 0; } catch {} };
 
   const endCurrentStream = () => {
     if (localStream) {
@@ -34,7 +69,6 @@ const useWebRTC = () => {
     }
   };
 
-  // media helper with fallbacks
   const getMedia = async (callType) => {
     if (!isSecure) {
       const err = Object.assign(new Error("Insecure context"), { name: "InsecureContextError" });
@@ -52,7 +86,6 @@ const useWebRTC = () => {
         case "NotFoundError":
         case "OverconstrainedError":
           if (wantVideo) {
-            // fallback to audio-only
             return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           }
           throw err;
@@ -97,57 +130,83 @@ const useWebRTC = () => {
   const waitForOffer = () =>
     new Promise((resolve, reject) => {
       if (signal?.type === 'offer') return resolve(signal);
+      let timer;
       const onIncoming = ({ signal: s }) => {
         if (s?.type === 'offer') {
           setSignal(s);
           socket?.off("incomingCall", onIncoming);
+          clearTimeout(timer);
           resolve(s);
         }
       };
       socket?.on("incomingCall", onIncoming);
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         socket?.off("incomingCall", onIncoming);
         reject(new Error("OfferTimeout"));
       }, 7000);
     });
 
-  // Socket listeners (single place)
+  // ontrack: set remote media
+  const attachOnTrack = (pc) => {
+    pc.ontrack = (event) => {
+      const stream = event.streams[0];
+      if (event.track.kind === "video" && partnerVideo.current) {
+        partnerVideo.current.srcObject = stream;
+        partnerVideo.current.playsInline = true;
+      }
+      if (event.track.kind === "audio") {
+        const el = partnerAudio.current || new Audio();
+        el.srcObject = stream;
+        el.autoplay = true;
+        el.play?.().catch(() => {});
+        if (!partnerAudio.current) partnerAudio.current = el;
+      }
+    };
+  };
+
+  // Socket listeners
   useEffect(() => {
     if (!socket) return;
 
-    const onIncomingCall = ({ signal, from, name, callType }) => {
-      console.log(`[WebRTC] 'incomingCall' from ${name}, type: ${callType}`);
+    const onIncomingCall = ({ signal: sig, from, name, callType }) => {
+      // receiver: set peerId
+      peerIdRef.current = from;
+
+      if (!incomingToastLockRef.current) {
+        incomingToastLockRef.current = true;
+        playRingIn();
+
+        incomingToastIdRef.current = toast.custom((t) => (
+          <div className="bg-gray-800 text-white p-4 rounded-md shadow-lg">
+            <p>📞 Incoming {callType || 'audio'} call from {name}</p>
+            <button
+              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md mt-2 mr-2"
+              onClick={() => { acceptCall(callType || 'audio'); toast.dismiss(t.id); }}
+            >
+              Accept
+            </button>
+            <button
+              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md mt-2"
+              onClick={() => { endCall(true); toast.dismiss(t.id); }}  // remote=true? here we just locally end without echo
+            >
+              Reject
+            </button>
+          </div>
+        ), { duration: 7000 });
+        setTimeout(() => { incomingToastLockRef.current = false; }, 7000);
+      }
+
       setReceivingCall(true);
       setCaller({ id: from, name });
       setCurrentCallType(callType || 'audio');
 
-      if (signal?.type) {
-        setSignal(signal);             // SDP (offer expected)
-      } else if (signal?.candidate) {
-        pendingRemoteICERef.current.push(signal); // early ICE → buffer
-      }
-
-      toast.custom((t) => (
-        <div className="bg-gray-800 text-white p-4 rounded-md shadow-lg">
-          <p>Incoming {callType || 'audio'} call from {name}</p>
-          <button
-            className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md mt-2 mr-2"
-            onClick={() => { acceptCall(callType || 'audio'); toast.dismiss(t.id); }}
-          >
-            Accept
-          </button>
-          <button
-            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md mt-2"
-            onClick={() => { endCall(); toast.dismiss(t.id); }}
-          >
-            Reject
-          </button>
-        </div>
-      ));
+      if (sig?.type) setSignal(sig);
+      else if (sig?.candidate) pendingRemoteICERef.current.push(sig);
     };
 
     const onCallAccepted = async (remoteSignal) => {
       setCallAccepted(true);
+      stopRingOut(); // outgoing ring stops when accepted
       const pc = peerConnection.current;
       if (!pc) return;
       try {
@@ -164,7 +223,8 @@ const useWebRTC = () => {
     };
 
     const onCallEnded = () => {
-      endCall();
+      // IMPORTANT: remote end → don't echo back
+      endCall(true);
       toast.error("Call ended.");
     };
 
@@ -177,29 +237,23 @@ const useWebRTC = () => {
       socket.off("callAccepted", onCallAccepted);
       socket.off("callEnded", onCallEnded);
       endCurrentStream();
+      incomingToastLockRef.current = false;
+      const id = incomingToastIdRef.current;
+      if (id) toast.dismiss(id);
+      incomingToastIdRef.current = null;
+      stopRingIn();
+      stopRingOut();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  // Common ontrack handler: route video to video element, audio to audio element
-  const attachOnTrack = (pc) => {
-    pc.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (event.track.kind === "video" && partnerVideo.current) {
-        partnerVideo.current.srcObject = stream;
-      }
-      if (event.track.kind === "audio" && partnerAudio.current) {
-        partnerAudio.current.srcObject = stream;
-        // try autoplay (user gesture usually exists after accept/click)
-        partnerAudio.current.play?.().catch(() => { /* ignore autoplay errors */ });
-      }
-    };
-  };
-
   const startCall = async (toUserId, callType) => {
-    console.log(`[WebRTC] Initiating call to user: ${toUserId} with type: ${callType}`);
+    console.log(`[WebRTC] Initiating call to ${toUserId} (${callType})`);
     setCalling(true);
     setCurrentCallType(callType);
+    // caller: set peerId here (BUG FIX)
+    peerIdRef.current = toUserId;
+
     endCurrentStream();
     peerConnection.current = null;
     remoteDescSetRef.current = false;
@@ -212,14 +266,16 @@ const useWebRTC = () => {
         userVideo.current.srcObject = stream;
         userVideo.current.muted = true;
         userVideo.current.playsInline = true;
+        userVideo.current.autoplay = true;
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
       peerConnection.current = pc;
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      attachOnTrack(pc);
 
       pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
@@ -233,19 +289,19 @@ const useWebRTC = () => {
         }
       };
 
-      attachOnTrack(pc);
-
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      if (socket) {
-        socket.emit("callUser", {
-          userToCall: toUserId,
-          signalData: offer,
-          from: user._id,
-          name: user.username,
-          callType
-        });
-      }
+
+      // play outgoing ring while waiting answer
+      playRingOut();
+
+      socket?.emit("callUser", {
+        userToCall: toUserId,
+        signalData: offer,
+        from: user._id,
+        name: user.username,
+        callType
+      });
     } catch (err) {
       console.error("getUserMedia error (startCall): ", err);
       if (err.name === "InsecureContextError") {
@@ -263,6 +319,9 @@ const useWebRTC = () => {
     console.log(`[WebRTC] acceptCall (${callType})`);
     setCallAccepted(true);
     setCurrentCallType(callType);
+
+    stopRingIn(); // stop incoming ringtone
+
     endCurrentStream();
     peerConnection.current = null;
     remoteDescSetRef.current = false;
@@ -275,27 +334,28 @@ const useWebRTC = () => {
         userVideo.current.srcObject = stream;
         userVideo.current.muted = true;
         userVideo.current.playsInline = true;
+        userVideo.current.autoplay = true;
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
       peerConnection.current = pc;
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
+      attachOnTrack(pc);
+
       pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
           socket.emit("answerCall", {
             signal: event.candidate,
-            to: caller.id
+            to: peerIdRef.current || caller.id // double safety
           });
         }
       };
 
-      attachOnTrack(pc);
-
-      // Ensure we have caller's offer before answering
+      // Ensure we have offer first
       let offer = signal?.type === 'offer' ? signal : null;
       if (!offer) {
         try {
@@ -313,12 +373,11 @@ const useWebRTC = () => {
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      if (socket) {
-        socket.emit("answerCall", {
-          signal: answer,
-          to: caller.id
-        });
-      }
+
+      socket?.emit("answerCall", {
+        signal: answer,
+        to: peerIdRef.current || caller.id
+      });
     } catch (err) {
       console.error("getUserMedia error (acceptCall): ", err);
       if (err.name === "InsecureContextError") {
@@ -332,10 +391,16 @@ const useWebRTC = () => {
     }
   };
 
-  const endCall = () => {
-    if (socket && caller?.id) {
-      socket.emit("endCall", { to: caller.id });
+  // remote=true means "this endCall is triggered by remote event; don't echo"
+  const endCall = (remote = false) => {
+    stopRingIn();
+    stopRingOut();
+
+    // Only emit if this user is actively ending the call
+    if (!remote && socket && peerIdRef.current) {
+      socket.emit("endCall", { to: peerIdRef.current });
     }
+
     if (peerConnection.current) {
       try { peerConnection.current.close(); } catch {}
       peerConnection.current = null;
@@ -349,6 +414,13 @@ const useWebRTC = () => {
     setCurrentCallType('audio');
     remoteDescSetRef.current = false;
     pendingRemoteICERef.current = [];
+    peerIdRef.current = null;
+
+    incomingToastLockRef.current = false;
+    if (incomingToastIdRef.current) {
+      toast.dismiss(incomingToastIdRef.current);
+      incomingToastIdRef.current = null;
+    }
   };
 
   return {
@@ -360,7 +432,7 @@ const useWebRTC = () => {
     endCall,
     userVideo,
     partnerVideo,
-    partnerAudio,  // NEW: expose ref
+    partnerAudio,
     acceptCall,
     currentCallType,
   };

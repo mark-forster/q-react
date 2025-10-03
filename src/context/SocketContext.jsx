@@ -17,12 +17,16 @@ export const SocketContextProvider = ({ children }) => {
 
         // connect to backend; use full URL in production
         const url = import.meta.env.VITE_SOCKET_URL || "http://localhost:8080";
-        const s = io(url, {
-            query: { userId: user._id },
-            transports: ["websocket", "polling"],
-            withCredentials: true,
-        });
-
+       const s = io(url, {
+  query: { userId: user._id },
+  transports: ["websocket", "polling"],
+  withCredentials: true,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 8000,
+  timeout: 20000,
+});
         socketRef.current = s;
         setSocket(s);
 
