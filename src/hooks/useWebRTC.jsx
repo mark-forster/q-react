@@ -1,4 +1,3 @@
-// hooks/useWebRTC.js
 import { useEffect, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import toast from 'react-hot-toast';
@@ -7,7 +6,8 @@ import { useSocket } from '../context/SocketContext';
 
 const useWebRTC = () => {
   const user = useRecoilValue(userAtom);
-  const { socket } = useSocket();        // ← use the single socket instance from context
+  const { socket } = useSocket();        // single socket instance from context
+
   const [localStream, setLocalStream] = useState(null);
   const [calling, setCalling] = useState(false);
   const [callAccepted, setCallAccepted] = useState(false);
@@ -18,7 +18,14 @@ const useWebRTC = () => {
 
   const userVideo = useRef();
   const partnerVideo = useRef();
+  const partnerAudio = useRef(); // NEW: remote audio element
   const peerConnection = useRef(null);
+
+  // SDP/ICE ordering helpers (kept for stability)
+  const remoteDescSetRef = useRef(false);
+  const pendingRemoteICERef = useRef([]);
+
+  const isSecure = typeof window !== "undefined" && window.isSecureContext;
 
   const endCurrentStream = () => {
     if (localStream) {
@@ -26,6 +33,83 @@ const useWebRTC = () => {
       setLocalStream(null);
     }
   };
+
+  // media helper with fallbacks
+  const getMedia = async (callType) => {
+    if (!isSecure) {
+      const err = Object.assign(new Error("Insecure context"), { name: "InsecureContextError" });
+      throw err;
+    }
+    const wantVideo = callType === "video";
+    const constraints = {
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: wantVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+    };
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      switch (err.name) {
+        case "NotFoundError":
+        case "OverconstrainedError":
+          if (wantVideo) {
+            // fallback to audio-only
+            return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          }
+          throw err;
+        case "NotReadableError":
+          toast.error("Your mic/camera seems to be in use by another app.");
+          if (wantVideo) {
+            return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          }
+          throw err;
+        default:
+          throw err;
+      }
+    }
+  };
+
+  const safeAddIce = async (pc, cand) => {
+    if (!pc) return;
+    if (!pc.remoteDescription || !remoteDescSetRef.current) {
+      pendingRemoteICERef.current.push(cand);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(cand));
+    } catch (e) {
+      console.error("addIceCandidate failed:", e);
+    }
+  };
+
+  const flushPendingICE = async (pc) => {
+    if (!pc) return;
+    const list = pendingRemoteICERef.current;
+    pendingRemoteICERef.current = [];
+    for (const cand of list) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.error("flush addIceCandidate failed:", e);
+      }
+    }
+  };
+
+  const waitForOffer = () =>
+    new Promise((resolve, reject) => {
+      if (signal?.type === 'offer') return resolve(signal);
+      const onIncoming = ({ signal: s }) => {
+        if (s?.type === 'offer') {
+          setSignal(s);
+          socket?.off("incomingCall", onIncoming);
+          resolve(s);
+        }
+      };
+      socket?.on("incomingCall", onIncoming);
+      const timer = setTimeout(() => {
+        socket?.off("incomingCall", onIncoming);
+        reject(new Error("OfferTimeout"));
+      }, 7000);
+    });
 
   // Socket listeners (single place)
   useEffect(() => {
@@ -35,10 +119,14 @@ const useWebRTC = () => {
       console.log(`[WebRTC] 'incomingCall' from ${name}, type: ${callType}`);
       setReceivingCall(true);
       setCaller({ id: from, name });
-      setSignal(signal);
       setCurrentCallType(callType || 'audio');
 
-      // Non-intrusive toast — design stays the same outside
+      if (signal?.type) {
+        setSignal(signal);             // SDP (offer expected)
+      } else if (signal?.candidate) {
+        pendingRemoteICERef.current.push(signal); // early ICE → buffer
+      }
+
       toast.custom((t) => (
         <div className="bg-gray-800 text-white p-4 rounded-md shadow-lg">
           <p>Incoming {callType || 'audio'} call from {name}</p>
@@ -58,19 +146,20 @@ const useWebRTC = () => {
       ));
     };
 
-    const onCallAccepted = (remoteSignal) => {
+    const onCallAccepted = async (remoteSignal) => {
       setCallAccepted(true);
-      if (peerConnection.current) {
-        // If using simple SDP pass-through, set as remote description when appropriate
-        try {
-          if (remoteSignal?.type) {
-            peerConnection.current.setRemoteDescription(new RTCSessionDescription(remoteSignal));
-          } else if (remoteSignal?.candidate) {
-            peerConnection.current.addIceCandidate(new RTCIceCandidate(remoteSignal));
-          }
-        } catch (e) {
-          console.error("Error applying callAccepted signal:", e);
+      const pc = peerConnection.current;
+      if (!pc) return;
+      try {
+        if (remoteSignal?.type) {
+          await pc.setRemoteDescription(new RTCSessionDescription(remoteSignal));
+          remoteDescSetRef.current = true;
+          await flushPendingICE(pc);
+        } else if (remoteSignal?.candidate) {
+          await safeAddIce(pc, remoteSignal);
         }
+      } catch (e) {
+        console.error("Error applying callAccepted signal:", e);
       }
     };
 
@@ -90,7 +179,22 @@ const useWebRTC = () => {
       endCurrentStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket]); // keep listeners bound to the single socket
+  }, [socket]);
+
+  // Common ontrack handler: route video to video element, audio to audio element
+  const attachOnTrack = (pc) => {
+    pc.ontrack = (event) => {
+      const stream = event.streams[0];
+      if (event.track.kind === "video" && partnerVideo.current) {
+        partnerVideo.current.srcObject = stream;
+      }
+      if (event.track.kind === "audio" && partnerAudio.current) {
+        partnerAudio.current.srcObject = stream;
+        // try autoplay (user gesture usually exists after accept/click)
+        partnerAudio.current.play?.().catch(() => { /* ignore autoplay errors */ });
+      }
+    };
+  };
 
   const startCall = async (toUserId, callType) => {
     console.log(`[WebRTC] Initiating call to user: ${toUserId} with type: ${callType}`);
@@ -98,25 +202,27 @@ const useWebRTC = () => {
     setCurrentCallType(callType);
     endCurrentStream();
     peerConnection.current = null;
-
-    const mediaConstraints = callType === "audio" ? { video: false, audio: true } : { video: true, audio: true };
+    remoteDescSetRef.current = false;
+    pendingRemoteICERef.current = [];
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      const stream = await getMedia(callType);
       setLocalStream(stream);
       if (userVideo.current) {
         userVideo.current.srcObject = stream;
+        userVideo.current.muted = true;
+        userVideo.current.playsInline = true;
       }
 
-      peerConnection.current = new RTCPeerConnection({
+      const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
+      peerConnection.current = pc;
 
-      stream.getTracks().forEach(track => peerConnection.current.addTrack(track, stream));
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      peerConnection.current.onicecandidate = (event) => {
+      pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
-          // Send ICE candidates to callee
           socket.emit("callUser", {
             userToCall: toUserId,
             signalData: event.candidate,
@@ -127,13 +233,10 @@ const useWebRTC = () => {
         }
       };
 
-      peerConnection.current.ontrack = (event) => {
-        partnerVideo.current.srcObject = event.streams[0];
-      };
+      attachOnTrack(pc);
 
-      // Offer (SDP)
-      const offer = await peerConnection.current.createOffer();
-      await peerConnection.current.setLocalDescription(offer);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
       if (socket) {
         socket.emit("callUser", {
           userToCall: toUserId,
@@ -144,34 +247,44 @@ const useWebRTC = () => {
         });
       }
     } catch (err) {
-      toast.error("Access to camera/microphone denied.");
-      console.error("getUserMedia error: ", err);
+      console.error("getUserMedia error (startCall): ", err);
+      if (err.name === "InsecureContextError") {
+        toast.error("Use HTTPS (or localhost) to access camera/mic.");
+      } else if (err.name === "NotAllowedError") {
+        toast.error("Please allow camera/mic for this site and retry.");
+      } else {
+        toast.error("Unable to access camera/microphone.");
+      }
       endCall();
     }
   };
 
   const acceptCall = async (callType) => {
+    console.log(`[WebRTC] acceptCall (${callType})`);
     setCallAccepted(true);
     setCurrentCallType(callType);
     endCurrentStream();
     peerConnection.current = null;
-
-    const mediaConstraints = callType === "audio" ? { video: false, audio: true } : { video: true, audio: true };
+    remoteDescSetRef.current = false;
+    pendingRemoteICERef.current = [];
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      const stream = await getMedia(callType);
       setLocalStream(stream);
       if (userVideo.current) {
         userVideo.current.srcObject = stream;
+        userVideo.current.muted = true;
+        userVideo.current.playsInline = true;
       }
 
-      peerConnection.current = new RTCPeerConnection({
+      const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
+      peerConnection.current = pc;
 
-      stream.getTracks().forEach(track => peerConnection.current.addTrack(track, stream));
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      peerConnection.current.onicecandidate = (event) => {
+      pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
           socket.emit("answerCall", {
             signal: event.candidate,
@@ -180,20 +293,26 @@ const useWebRTC = () => {
         }
       };
 
-      peerConnection.current.ontrack = (event) => {
-        partnerVideo.current.srcObject = event.streams[0];
-      };
+      attachOnTrack(pc);
 
-      // Apply caller's SDP offer first
-      if (signal?.type) {
-        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(signal));
-      } else if (signal?.candidate) {
-        await peerConnection.current.addIceCandidate(new RTCIceCandidate(signal));
+      // Ensure we have caller's offer before answering
+      let offer = signal?.type === 'offer' ? signal : null;
+      if (!offer) {
+        try {
+          offer = await waitForOffer();
+        } catch {
+          toast.error("Call offer not received yet. Please try again.");
+          endCall();
+          return;
+        }
       }
 
-      // Answer (SDP)
-      const answer = await peerConnection.current.createAnswer();
-      await peerConnection.current.setLocalDescription(answer);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      remoteDescSetRef.current = true;
+      await flushPendingICE(pc);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
       if (socket) {
         socket.emit("answerCall", {
           signal: answer,
@@ -201,8 +320,14 @@ const useWebRTC = () => {
         });
       }
     } catch (err) {
-      toast.error("Access to camera/microphone denied.");
-      console.error("getUserMedia error: ", err);
+      console.error("getUserMedia error (acceptCall): ", err);
+      if (err.name === "InsecureContextError") {
+        toast.error("Use HTTPS (or localhost) to access camera/mic.");
+      } else if (err.name === "NotAllowedError") {
+        toast.error("Please allow camera/mic for this site and retry.");
+      } else {
+        toast.error("Unable to access camera/microphone.");
+      }
       endCall();
     }
   };
@@ -212,7 +337,7 @@ const useWebRTC = () => {
       socket.emit("endCall", { to: caller.id });
     }
     if (peerConnection.current) {
-      peerConnection.current.close();
+      try { peerConnection.current.close(); } catch {}
       peerConnection.current = null;
     }
     endCurrentStream();
@@ -222,6 +347,8 @@ const useWebRTC = () => {
     setCaller({});
     setSignal(null);
     setCurrentCallType('audio');
+    remoteDescSetRef.current = false;
+    pendingRemoteICERef.current = [];
   };
 
   return {
@@ -233,6 +360,7 @@ const useWebRTC = () => {
     endCall,
     userVideo,
     partnerVideo,
+    partnerAudio,  // NEW: expose ref
     acceptCall,
     currentCallType,
   };

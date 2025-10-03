@@ -1,4 +1,3 @@
-// components/MessageContainer.jsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flex,
@@ -87,13 +86,14 @@ const MessageContainer = () => {
     endCall,
     userVideo,
     partnerVideo,
+    partnerAudio, // NEW
     caller,
     isReceivingCall,
     acceptCall,
     currentCallType,
   } = useWebRTC();
 
-  // kept, but we no longer trigger it from socket; we rely on hook states to open modal
+  // kept, but modal visibility is driven by hook state
   const {
     isOpen: isCallModalOpen,
     onOpen: onCallModalOpen,
@@ -154,7 +154,7 @@ const MessageContainer = () => {
     socket.on("messagesSeen", handleMessagesSeen);
     socket.on("newMessage", handleReceiveNewMessage);
 
-    // ⚠️ Do NOT listen incomingCall here anymore (centralized in useWebRTC)
+    // Do NOT listen incomingCall here (centralized in useWebRTC)
 
     return () => {
       socket.off("messagesSeen", handleMessagesSeen);
@@ -177,7 +177,6 @@ const MessageContainer = () => {
       return;
     }
     startCall(selectedConversation.userId, callType);
-    // No manual modal open here; modal visibility is driven by hook state
   };
 
   const handleEndCall = () => {
@@ -311,7 +310,6 @@ const MessageContainer = () => {
           </ModalHeader>
           <ModalBody>
             <Box position="relative">
-              {/* Video calls show videos; audio shows avatar text */}
               {currentCallType === 'video' ? (
                 <>
                   <video playsInline muted ref={userVideo} autoPlay style={{ width: "100%" }} />
@@ -325,6 +323,8 @@ const MessageContainer = () => {
                   <Text fontSize="lg" mt={4}>On a voice call...</Text>
                 </Box>
               )}
+              {/* Hidden audio sink for remote audio (works for audio-only & video) */}
+              <audio ref={partnerAudio} autoPlay playsInline style={{ display: "none" }} />
             </Box>
           </ModalBody>
           <ModalFooter>
