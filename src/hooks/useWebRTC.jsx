@@ -10,7 +10,7 @@ import axios from "axios";
 // Zego SDK
 import { ZegoExpressEngine } from "zego-express-engine-webrtc";
 
-const ZEGO_APP_ID = 1163922961; 
+const ZEGO_APP_ID = 153980135; 
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
