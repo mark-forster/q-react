@@ -1,309 +1,402 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Flex, Text, Divider, Avatar, useColorModeValue, SkeletonCircle, Skeleton,
-  Box, AvatarBadge, IconButton, Menu, MenuButton, MenuList, MenuItem,
-  useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody,
-  ModalFooter, Button, Tooltip
+  Flex, Text, Divider, Avatar, AvatarBadge, IconButton,
+  Menu, MenuButton, MenuList, MenuItem,
+  useColorModeValue, useToast, Box, Tooltip,
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Spinner
 } from "@chakra-ui/react";
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import { selectedConversationAtom, messagesAtom, conversationsAtom } from "../atoms/messageAtom";
-import axios from "axios";
 import userAtom from "../atoms/userAtom";
 import { useSocket } from "../context/SocketContext";
+import axios from "axios";
+import { FiPhone, FiVideo } from "react-icons/fi";
+import { CiMenuKebab } from "react-icons/ci";
 import Message from "./Message";
 import MessageInput from "./MessageInput";
-import { FiPhone, FiVideo, FiMic, FiMicOff, FiVideoOff } from "react-icons/fi";
-import { CiMenuKebab } from "react-icons/ci";
 import useWebRTC from "../hooks/useWebRTC";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
-const api = axios.create({ baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1", withCredentials: true });
-
-const LoadingMessageSkeleton = ({ isSender }) => (
-  <Flex gap={2} alignItems={"center"} p={1} borderRadius={"md"} alignSelf={isSender ? "flex-end" : "flex-start"}>
-    {isSender ? null : <SkeletonCircle size={7} />}
-    <Flex flexDir={"column"} gap={2}>
-      <Skeleton h="8px" w="250px" />
-      <Skeleton h="8px" w="250px" />
-      <Skeleton h="8px" w="250px" />
-    </Flex>
-    {isSender ? <SkeletonCircle size={7} /> : null}
-  </Flex>
-);
+const api = axios.create({
+  baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
+  withCredentials: true,
+});
 
 const MessageContainer = () => {
-  const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
-  const [messages, setMessages] = useRecoilState(messagesAtom);
-  const currentUser = useRecoilValue(userAtom);
-  const { socket, onlineUsers } = useSocket();
-  const setConversations = useSetRecoilState(conversationsAtom);
-  const messageEndRef = useRef(null);
-  const toast = useToast();
-  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
+  const [messages, setMessages] = useRecoilState(messagesAtom);
+  const currentUser = useRecoilValue(userAtom);
+  const { socket, onlineUsers } = useSocket();
+  const setConversations = useSetRecoilState(conversationsAtom);
+  const toast = useToast();
+  const messageEndRef = useRef(null);
+  const [loadingMessages, setLoadingMessages] = useState(true);
 
-  const isOnline = selectedConversation?.userId && onlineUsers.includes(selectedConversation.userId);
+  // States for Call Handling
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [currentCallType, setCurrentCallType] = useState("audio");
+  const [isRingingModalOpen, setIsRingingModalOpen] = useState(false);
+  const [currentRoomID, setCurrentRoomID] = useState(null);
+  const [incomingCallData, setIncomingCallData] = useState(null);
+  const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
+  const [isSelfEndingCall, setIsSelfEndingCall] = useState(false);
 
-  const {
-    isCalling, isCallAccepted, startCall, endCall, userVideo,
-    partnerVideo, partnerAudio, caller, isReceivingCall,
-    acceptCall, currentCallType, toggleMic, toggleCamera 
-  } = useWebRTC();
+  const { startUIKitCall } = useWebRTC();
 
-  // Call Controls State (Local states to manage UI toggles)
-  const [isMicEnabled, setIsMicEnabled] = useState(true);
-  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const isOnline =
+    selectedConversation?.userId && onlineUsers.includes(selectedConversation.userId);
 
-  // Call ပြီးဆုံးသွားရင် Toggles တွေရဲ့ State ကို ပြန်ပြီး Reset လုပ်ရန်
-  useEffect(() => {
-    if (!isCallAccepted && !isCalling && !isReceivingCall) {
-        setIsMicEnabled(true);
-        setIsCameraEnabled(true);
-    }
-  }, [isCallAccepted, isCalling, isReceivingCall]);
+  // ========================= Fetch Messages =========================
+  useEffect(() => {
+    const getMessages = async () => {
+      if (!selectedConversation?._id) return;
+      setMessages([]);
+      setLoadingMessages(true);
+      try {
+        const response = await api.get(`/messages/conversation/${selectedConversation._id}`);
+        setMessages(response.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingMessages(false);
+      }
+    };
+    getMessages();
+  }, [selectedConversation?._id]);
 
-  useEffect(() => {
-    const getMessages = async () => {
-      if (!selectedConversation?._id) return;
-      setMessages([]);
-      setLoadingMessages(true);
-      try {
-        if (selectedConversation.mock) { setLoadingMessages(false); return; }
-        const response = await api.get(`/messages/conversation/${selectedConversation._id}`);
-        setMessages(response.data);
-      } catch (error) { console.error(error); } finally { setLoadingMessages(false); }
-    };
-    getMessages();
-  }, [selectedConversation._id, selectedConversation.mock, setMessages]);
+  // Scroll to latest message
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  useEffect(() => {
-    if (!socket) return;
+  // ========================= End Call Logic =========================
+  const handleEndCallLogic = (isSelfEnd = true) => {
+    setIsRingingModalOpen(false);
+    setIsIncomingCallModalOpen(false);
 
-    const handleMessagesSeen = ({ conversationId }) => {
-      if (selectedConversation?._id === conversationId) {
-        setMessages((prev) => prev.map((m) => (m.sender === currentUser._id
-          ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), selectedConversation.userId])) }
-          : m))
-        );
-      }
-    };
+    // Wait a bit before closing modal to let Zego cleanup finish
+    setTimeout(() => {
+      setIsCallModalOpen(false);
+    }, 500);
 
-    const handleReceiveNewMessage = (message) => {
-      if (selectedConversation?._id === message.conversationId && message.sender !== currentUser._id) {
-        // Send seen status back to the server
-        api.put(`/messages/seen/${selectedConversation._id}`).catch((err) => console.error("Failed to update seen status:", err));
-      }
-    };
+    // Emit socket event if user ended manually
+    if (isSelfEnd) {
+      setIsSelfEndingCall(true);
+      const recipientId = selectedConversation?.userId || incomingCallData?.from;
+      if (recipientId) {
+        socket.emit("endCall", { to: recipientId });
+      }
+    }
 
-    socket.on("messagesSeen", handleMessagesSeen);
-    socket.on("newMessage", handleReceiveNewMessage);
+    setTimeout(() => setIsSelfEndingCall(false), 50);
+    setCurrentRoomID(null);
+    setIncomingCallData(null);
+  };
 
-    return () => {
-      socket.off("messagesSeen", handleMessagesSeen);
-      socket.off("newMessage", handleReceiveNewMessage);
-    };
-  }, [socket, selectedConversation, setMessages, currentUser._id, setConversations]);
+  // ========================= Socket Listeners =========================
+  useEffect(() => {
+    if (!socket) return;
 
-  useEffect(() => { messageEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loadingMessages]);
+    // Incoming Call
+    socket.on("incomingCall", ({ from, name, callType, roomID }) => {
+      setIncomingCallData({ from, name, callType, roomID });
+      setIsIncomingCallModalOpen(true);
+    });
 
-  const containerBg = useColorModeValue("white", "gray.800");
+    // Call Ended
+    socket.on("callEnded", () => {
+      if (!isSelfEndingCall) {
+        handleEndCallLogic(false);
+        toast({
+          title: "Call Ended",
+          description: "The call has ended.",
+          status: "info",
+          duration: 1500,
+          isClosable: true,
+        });
+      }
+    });
 
-  const handleCallStart = (callType) => {
-    if (!selectedConversation?.userId) return;
-    setIsMicEnabled(true);
-    setIsCameraEnabled(true);
-    startCall(selectedConversation.userId, callType);
-  };
+    // Call Rejected
+    socket.on("callRejected", () => {
+      if (isRingingModalOpen) {
+        toast({
+          title: "Call Rejected",
+          description: `${selectedConversation?.username} rejected your call.`,
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+      setIsRingingModalOpen(false);
+      setIsCallModalOpen(false);
+    });
 
-  const handleEndCall = () => { endCall(); };
+    return () => {
+      socket.off("incomingCall");
+      socket.off("callEnded");
+      socket.off("callRejected");
+    };
+  }, [socket, toast, selectedConversation, isRingingModalOpen, isSelfEndingCall]);
 
-  const handleRejectCall = () => {
-    endCall(true, true);
-  };
-  
-  const handleToggleMic = () => {
-    toggleMic(!isMicEnabled);
-    setIsMicEnabled(!isMicEnabled);
-  };
+  // ========================= Answer / Reject Incoming =========================
+  const handleAnswerIncomingCall = () => {
+    if (!incomingCallData) return;
 
-  const handleToggleCamera = () => {
-    toggleCamera(!isCameraEnabled);
-    setIsCameraEnabled(!isCameraEnabled);
-  };
+    setIsIncomingCallModalOpen(false);
+    setCurrentCallType(incomingCallData.callType);
+    setIsCallModalOpen(true);
 
-  return (
-    <Flex flex={70} bg={containerBg} borderRadius={"md"} p={4} flexDir={"column"}>
-      {/* Header */}
-      <Flex w={"full"} h={12} alignItems={"center"} gap={2}>
-        <Avatar src={selectedConversation?.userProfilePic?.url || "/no-pic.jpeg"} w={9} h={9}>
-          {isOnline && <AvatarBadge boxSize="1em" bg="green.500" />}
-        </Avatar>
-        <Flex flexDir="column" ml={1}>
-          <Text display={"flex"} alignItems={"center"} fontWeight={"bold"}>{selectedConversation?.username}</Text>
-          <Text fontSize={"xs"} color={"gray.500"}>{isOnline ? "Online" : "Offline"}</Text>
-        </Flex>
-        <Flex ml={"auto"} gap={2} alignItems={"center"}>
-          {isOnline && (
-            <>
-              <Tooltip label="Audio Call" hasArrow placement="bottom">
-                <IconButton icon={<FiPhone />} aria-label="Audio Call" variant="ghost" size="sm" onClick={() => handleCallStart("audio")} isDisabled={isCalling || isReceivingCall || isCallAccepted} />
-              </Tooltip>
-              <Tooltip label="Video Call" hasArrow placement="bottom">
-                <IconButton icon={<FiVideo />} aria-label="Video Call" variant="ghost" size="sm" onClick={() => handleCallStart("video")} isDisabled={isCalling || isReceivingCall || isCallAccepted} />
-              </Tooltip>
-            </>
-          )}
-          <Menu>
-            <MenuButton as={IconButton} icon={<CiMenuKebab />} aria-label="Options" variant="ghost" size="sm" />
-            <MenuList>
-              <MenuItem onClick={() => toast({ title: "Not implemented yet", description: "This feature is not yet available.", status: "info", duration: 3000, isClosable: true })}>
-                View Profile
-              </MenuItem>
-            </MenuList>
-          </Menu>
-        </Flex>
-      </Flex>
+    socket.emit("answerCall", { to: incomingCallData.from });
 
-      <Divider my={2} />
+    setTimeout(() => {
+      startUIKitCall({
+        roomID: incomingCallData.roomID,
+        userID: currentUser._id,
+        userName: currentUser.username,
+        callType: incomingCallData.callType,
+        endCallCallback: () => handleEndCallLogic(true),
+      });
+    }, 300);
 
-      {/* Messages */}
-      <Flex flexGrow={1} flexDir={"column"} gap={4} overflowY={"auto"} p={4}
-        css={{ "&::-webkit-scrollbar": { width: "8px" }, "&::-webkit-scrollbar-thumb": { backgroundColor: useColorModeValue("gray.300", "gray.600"), borderRadius: "4px" } }}>
-        {loadingMessages ? (
-          <>
-            <LoadingMessageSkeleton isSender={false} />
-            <LoadingMessageSkeleton isSender={true} />
-            <LoadingMessageSkeleton isSender={false} />
-          </>
-        ) : (
-          messages.map((message) => (
-            <Flex key={message._id} direction={"column"}>
-              <Message message={message} ownMessage={message.sender === currentUser._id} />
-            </Flex>
-          ))
-        )}
-        <div ref={messageEndRef} />
-      </Flex>
+    setIncomingCallData(null);
+  };
 
-      <MessageInput setMessages={setMessages} />
+  const handleRejectIncomingCall = () => {
+    if (!incomingCallData) return;
+    socket.emit("callRejected", { to: incomingCallData.from });
+    setIsIncomingCallModalOpen(false);
+    setIncomingCallData(null);
+  };
 
-      {/* Call Modal */}
-      <Modal 
-        isOpen={isReceivingCall || isCallAccepted || isCalling} 
-        onClose={handleEndCall} 
-        isCentered
-        closeOnOverlayClick={false} 
-        closeOnEsc={false} 
-        // Video Call Accepted ဆိုရင် Modal ကို ပိုကျယ်အောင် လုပ်ပါ
-         size={currentCallType === 'video' && isCallAccepted ? '3xl' : 'md'}
-      >
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>
-            {isReceivingCall ? `Incoming ${currentCallType} call from ${caller.name}` : (isCallAccepted ? `In ${currentCallType} Call` : `Calling ${selectedConversation?.username} (${currentCallType})...`)}
-          </ModalHeader>
-          <ModalBody>
-            <Box position="relative" w="full" h={currentCallType === 'video' ? (isCallAccepted ? '450px' : '300px') : 'auto'}>
-              {currentCallType === 'video' ? (
-                <Flex direction="column" gap={2} h="full">
-                  {/* Remote/Partner Video */}
-                    {/* Add a check to ensure partnerVideo ref is available for video call before rendering */}
-                  <video 
-                    playsInline 
-                    ref={partnerVideo} 
-                    autoPlay 
-                    style={{ 
-                        width: "100%", 
-                        height: isCallAccepted ? '100%' : '300px', 
-                        objectFit: 'cover', 
-                        borderRadius: "8px", 
-                        border: isCallAccepted ? "1px solid #333" : "none" 
-                    }} 
-                  />
-                  
-                  {/* Local User Video (Small, floating style) */}
-                  {(isCallAccepted || isCalling) && (
-                    <video 
-                      playsInline 
-                      muted 
-                      ref={userVideo} 
-                      autoPlay 
-                      style={{ 
-                        width: "150px", 
-                        height: "100px",
-                        position: "absolute", 
-                        bottom: isCallAccepted ? '10px' : 'auto', 
-                        top: isCallAccepted ? 'auto' : '10px', 
-                        right: '10px', 
-                        borderRadius: "8px", 
-                        border: "2px solid white", 
-                        zIndex: 10,
-                        objectFit: 'cover'
-                      }} 
-                    />
-                  )}
-                </Flex>
-              ) : (
-                <Box textAlign="center" py={10}>
-                  <Avatar 
-                    size="xl" 
-                    name={isReceivingCall ? caller.name : selectedConversation?.username}
-                    src={isReceivingCall ? null : selectedConversation?.userProfilePic?.url || "/no-pic.jpeg"}
-                  />
-                  <Text fontSize="lg" mt={4}>{isReceivingCall ? `Incoming call from ${caller.name}` : (isCallAccepted ? "On a voice call..." : "Connecting...")}</Text>
-                </Box>
-              )}
-              {/* Partner Audio (Hidden) */}
-              <audio ref={partnerAudio} autoPlay playsInline style={{ display: "none" }} />
-            </Box>
-          </ModalBody>
-          <ModalFooter display="flex" justifyContent="space-between">
-            
-            {/* Control Buttons */}
-            {(isCallAccepted || isCalling) && (
-              <Flex gap={3} alignItems="center">
-                {/* Mic Toggle */}
-                <Tooltip label={isMicEnabled ? "Mute Mic" : "Unmute Mic"} hasArrow>
-                  <IconButton 
-                    icon={isMicEnabled ? <FiMic /> : <FiMicOff />} 
-                    onClick={handleToggleMic} 
-                    isRound={true} 
-                    colorScheme={isMicEnabled ? 'gray' : 'red'} 
-                    aria-label="Toggle Microphone"
-                  />
-                </Tooltip>
+  // ========================= Start Outgoing Call =========================
+  const handleStartCall = (type) => {
+    if (!selectedConversation?.userId) return;
+    setCurrentCallType(type);
+    setIsRingingModalOpen(true);
 
-                {/* Camera Toggle (Video Call only) */}
-                {currentCallType === 'video' && (isCallAccepted || isCalling) && (
-                  <Tooltip label={isCameraEnabled ? "Disable Camera" : "Enable Camera"} hasArrow>
-                    <IconButton 
-                      icon={isCameraEnabled ? <FiVideo /> : <FiVideoOff />} 
-                      onClick={handleToggleCamera} 
-                      isRound={true} 
-                      colorScheme={isCameraEnabled ? 'gray' : 'red'} 
-                      aria-label="Toggle Camera"
-                    />
-                  </Tooltip>
-                )}
-              </Flex>
-            )}
-            
-            {/* Action Buttons */}
-            <Flex ml="auto" gap={3}>
-              {isReceivingCall && !isCallAccepted && (
-                <Button onClick={() => { acceptCall(caller, currentCallType); }} colorScheme="green" mr={3}>Accept</Button>
-              )}
-              <Button 
-                onClick={isReceivingCall && !isCallAccepted ? handleRejectCall : handleEndCall} 
-                colorScheme="red"
-              >
-                {isReceivingCall && !isCallAccepted ? "Reject" : "End Call"}
-              </Button>
-            </Flex>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </Flex>
-  );
+    const roomID = [currentUser._id, selectedConversation.userId].sort().join("_");
+    setCurrentRoomID(roomID);
+
+    socket.emit("callUser", {
+      userToCall: selectedConversation.userId,
+      roomID,
+      from: currentUser._id,
+      name: currentUser.username,
+      callType: type,
+    });
+
+    socket.once("callAccepted", () => {
+      setIsRingingModalOpen(false);
+      setIsCallModalOpen(true);
+
+      startUIKitCall({
+        roomID,
+        userID: currentUser._id,
+        userName: currentUser.username,
+        callType: type,
+        endCallCallback: () => handleEndCallLogic(true),
+      });
+    });
+  };
+
+  // ========================= UI Render =========================
+  const containerBg = useColorModeValue("white", "gray.800");
+
+  return (
+    <Flex flex={70} bg={containerBg} borderRadius="md" p={4} flexDir="column">
+      {/* Header */}
+      <Flex w="full" h={12} alignItems="center" gap={2}>
+        <Avatar src={selectedConversation?.userProfilePic?.url || "/no-pic.jpeg"} w={9} h={9}>
+          {isOnline && <AvatarBadge boxSize="1em" bg="green.500" />}
+        </Avatar>
+        <Flex flexDir="column" ml={1}>
+          <Text fontWeight="bold">{selectedConversation?.username}</Text>
+          <Text fontSize="xs" color="gray.500">
+            {isOnline ? "Online" : "Offline"}
+          </Text>
+        </Flex>
+        <Flex ml="auto" gap={2}>
+          {isOnline && (
+            <>
+              <Tooltip label="Audio Call" hasArrow placement="bottom">
+                <IconButton
+                  icon={<FiPhone />}
+                  aria-label="Audio Call"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleStartCall("audio")}
+                />
+              </Tooltip>
+              <Tooltip label="Video Call" hasArrow placement="bottom">
+                <IconButton
+                  icon={<FiVideo />}
+                  aria-label="Video Call"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleStartCall("video")}
+                />
+              </Tooltip>
+            </>
+          )}
+          <Menu>
+            <MenuButton as={IconButton} icon={<CiMenuKebab />} variant="ghost" size="sm" />
+            <MenuList>
+              <MenuItem
+                onClick={() =>
+                  toast({
+                    title: "Not implemented yet",
+                    description: "This feature is not yet available.",
+                    status: "info",
+                    duration: 3000,
+                    isClosable: true,
+                  })
+                }
+              >
+                View Profile
+              </MenuItem>
+            </MenuList>
+          </Menu>
+        </Flex>
+      </Flex>
+
+      <Divider my={2} />
+
+      {/* Messages */}
+      <Flex
+        flexGrow={1}
+        flexDir="column"
+        gap={4}
+        overflowY="auto"
+        p={4}
+        css={{
+          "&::-webkit-scrollbar": { width: "8px" },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: useColorModeValue("gray.300", "gray.600"),
+            borderRadius: "4px",
+          },
+        }}
+      >
+        {loadingMessages ? (
+          <Text textAlign="center" color="gray.500">
+            Loading messages...
+          </Text>
+        ) : (
+          messages.map((m) => (
+            <Flex key={m._id} direction="column">
+              <Message message={m} ownMessage={m.sender === currentUser._id} />
+            </Flex>
+          ))
+        )}
+        <div ref={messageEndRef} />
+      </Flex>
+
+      <MessageInput setMessages={setMessages} />
+
+      {/* 1️⃣ Active Call Modal */}
+      <Modal
+        isOpen={isCallModalOpen}
+        onClose={() => handleEndCallLogic(true)}
+        size={currentCallType === "video" ? "3xl" : "md"}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            <Text>{`In ${currentCallType} call with ${selectedConversation?.username}`}</Text>
+          </ModalHeader>
+          <ModalBody>
+            <Box
+              id="zego-call-container"
+              w="full"
+              h={currentCallType === "video" ? "450px" : "300px"}
+              bg="gray.900"
+              borderRadius="md"
+            />
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
+      {/* 2️⃣ Outgoing Ringing Modal */}
+      {isRingingModalOpen && (
+        <Modal
+          isOpen={isRingingModalOpen}
+          onClose={() => handleEndCallLogic(true)}
+          isCentered
+          closeOnOverlayClick={false}
+        >
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text fontWeight="bold" color="blue.400">
+                Outgoing {currentCallType === "video" ? "Video" : "Audio"} Call
+              </Text>
+            </ModalHeader>
+            <ModalBody textAlign="center">
+              <Avatar
+                src={selectedConversation?.userProfilePic?.url || "/no-pic.jpeg"}
+                size="xl"
+                name={selectedConversation?.username}
+              />
+              <Text mt={3} fontSize="lg">
+                Calling{" "}
+                <Text as="span" fontWeight="bold">
+                  {selectedConversation?.username}
+                </Text>
+                ...
+              </Text>
+              <Flex mt={2} justifyContent="center" alignItems="center">
+                <Spinner size="sm" mr={2} />
+                <Text fontSize="sm" color="gray.500">
+                  (Waiting for answer)
+                </Text>
+              </Flex>
+            </ModalBody>
+            <ModalFooter justifyContent="center">
+              <Button colorScheme="red" onClick={() => handleEndCallLogic(true)}>
+                Cancel Call
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
+
+      {/* 3️⃣ Incoming Call Modal */}
+      {incomingCallData && (
+        <Modal
+          isOpen={isIncomingCallModalOpen}
+          onClose={handleRejectIncomingCall}
+          isCentered
+          closeOnOverlayClick={false}
+        >
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text fontWeight="bold" color="green.500">
+                Incoming {incomingCallData.callType === "video" ? "Video" : "Audio"} Call
+              </Text>
+            </ModalHeader>
+            <ModalBody>
+              <Text>
+                <Text as="span" fontWeight="bold">
+                  {incomingCallData.name}
+                </Text>{" "}
+                is calling you.
+              </Text>
+            </ModalBody>
+            <ModalFooter gap={4}>
+              <Button colorScheme="red" onClick={handleRejectIncomingCall}>
+                Reject
+              </Button>
+              <Button colorScheme="green" onClick={handleAnswerIncomingCall}>
+                Answer
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
+    </Flex>
+  );
 };
 
 export default MessageContainer;

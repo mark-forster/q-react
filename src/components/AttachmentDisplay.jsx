@@ -7,7 +7,7 @@ import {
   Image,
   Skeleton,
   useColorModeValue,
-  useToast,
+  useToast, // useToast ကိုလည်း အပေါ်မှာပဲ ခေါ်ပါတယ် (ဒါပေမယ့် ဒီကုဒ်မှာ မသုံးထားပါ)
   IconButton,
   Slider,
   SliderTrack,
@@ -84,6 +84,11 @@ function buildCacheKey(att, params) {
 }
 
 const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isSender }) => {
+  // ----------------------------------------------------
+  // 1. ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP LEVEL
+  // ----------------------------------------------------
+  
+  // Basic State & Refs
   const [fileUrl, setFileUrl] = useState(null);
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [imgLoading, setImgLoading] = useState(true);
@@ -96,6 +101,20 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
   const [duration, setDuration] = useState(0);
   const audioRef = useRef(null);
   const [currentlyPlayingAudioId, setCurrentlyPlayingAudioId] = useRecoilState(currentlyPlayingAudioIdAtom);
+
+  // CONTEXT-BASED HOOKS (Chakra UI hooks) - MUST BE UNCONDITIONAL
+  const audioBubbleBgOther = useColorModeValue("gray.200", "gray.700");
+  const audioIconBgOther = useColorModeValue("gray.300", "gray.600");
+  const audioIconColorOther = useColorModeValue("black", "white");
+  const audioSliderTrackColorOther = useColorModeValue("gray.400", "gray.500");
+  const audioTimeColorOther = useColorModeValue("gray.500", "gray.400");
+  const fileBg = useColorModeValue("gray.100", "gray.700");
+  const imageErrorBg = useColorModeValue("gray.100", "gray.700");
+  const imageErrorText = useColorModeValue("gray.500", "gray.400");
+  
+  // ✅ NEW FIX: Move the conditional hover background logic's hook to the top level
+  const audioHoverBgLight = useColorModeValue("gray.400", "gray.500");
+
 
   // ------- Stable derived values (to avoid effect ) -------
   const attType = attachment?.type;
@@ -236,7 +255,9 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
     setCurrentlyPlayingAudioId(null);
   };
 
-  // ----------- RENDER -----------
+  // ----------------------------------------------------
+  // ----------- RENDER: Use UNCONDITIONAL HOOKS here -----------
+  // ----------------------------------------------------
   switch (attType) {
     case "image":
     case "gif":
@@ -272,12 +293,12 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
               height="160px"
               width="100%"
               borderRadius="4px"
-              bg={useColorModeValue("gray.100", "gray.700")}
+              bg={imageErrorBg}
               alignItems="center"
               justifyContent="center"
               flexDirection="column"
             >
-              <Text fontSize="sm" color={useColorModeValue("gray.500", "gray.400")}>
+              <Text fontSize="sm" color={imageErrorText}>
                 Failed to load image
               </Text>
               <Button
@@ -316,16 +337,19 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
 
     case "audio": {
       const canUse = duration && isFinite(duration);
-      // Determine colors based on `isSender` prop
-      const bubbleBg = isSender ? "blue.500" : useColorModeValue("gray.200", "gray.700");
+      // Determine colors using the values calculated from unconditional hooks
+      const bubbleBg = isSender ? "blue.500" : audioBubbleBgOther;
       
-      const iconBg = useColorModeValue(isSender ? "white" : "gray.300", isSender ? "white" : "gray.600");
-      const iconColor = useColorModeValue(isSender ? "blue.500" : "black", isSender ? "blue.500" : "white");
+      const iconBg = isSender ? "white" : audioIconBgOther;
+      const iconColor = isSender ? "blue.500" : audioIconColorOther;
       
-      const sliderColor = isSender ? "white" : useColorModeValue("gray.500", "white");
-      const sliderTrackColor = isSender ? "whiteAlpha.500" : useColorModeValue("gray.400", "gray.500");
+      const sliderColor = isSender ? "white" : audioIconColorOther; // Reusing iconColorOther for slider filled track
+      const sliderTrackColor = isSender ? "whiteAlpha.500" : audioSliderTrackColorOther;
       
-      const timeColor = isSender ? "whiteAlpha.800" : useColorModeValue("gray.500", "gray.400");
+      const timeColor = isSender ? "whiteAlpha.800" : audioTimeColorOther;
+
+      // 💥 FIX: Calculate the _hover background using the unconditional hook value
+      const audioHoverBg = isSender ? "white" : audioHoverBgLight; 
       
       return (
         <Flex
@@ -347,7 +371,9 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
                 bg={iconBg}
                 color={iconColor}
                 _hover={{
-                  bg: useColorModeValue(isSender ? "white" : "gray.400", isSender ? "white" : "gray.500"),
+                  // ❌ Old Code: bg: useColorModeValue(isSender ? "white" : "gray.400", isSender ? "white" : "gray.500"),
+                  // ✅ Fixed Code: Use the pre-calculated value
+                  bg: audioHoverBg,
                 }}
                 onClick={handlePlayPause}
                 isDisabled={!canUse}
@@ -398,7 +424,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
         <Flex
           alignItems="center"
           p={2}
-          bg={useColorModeValue("gray.100", "gray.700")}
+          bg={fileBg}
           borderRadius="md"
           mt={1}
         >
@@ -409,7 +435,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
             cursor={fileUrl ? "pointer" : "default"}
             color="blue.500"
             textDecoration="underline"
-            onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
+            onClick={() => downloadUrl && window.open(downloadUrl, "_blank", "noopener,noreferrer")}
           >
             {attachment?.name || "Download"}
           </Text>
