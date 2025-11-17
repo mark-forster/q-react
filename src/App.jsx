@@ -19,6 +19,8 @@ import ChatPage from "./ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
 import VerifyOtpPage from "./pages/VerifyOtpPage";
+// import CallWidget from "./components/CallPage";
+import CallPage from "./components/CallPage";
 
 // Create a single axios instance for the entire application.
 // It checks for a VITE_API_URL environment variable to handle production builds.
@@ -88,6 +90,7 @@ function App() {
               element={user ? <ChatPage /> : <Navigate to="/auth" />}
             />
             <Route path="/verify-otp" element={<VerifyOtpPage />} />
+            <Route path="/call/:roomID" element={<CallPage />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Container>

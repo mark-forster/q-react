@@ -1,9 +1,7 @@
+// src/hooks/useWebRTC.js
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import axios from "axios";
-import toast from "react-hot-toast";
-
-let zegoInstance = null;
-let localMediaStream = null;
+import { useRef } from "react";
 
 const ZEGO_APP_ID = 281042663;
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -13,133 +11,39 @@ const api = axios.create({
   withCredentials: true,
 });
 
-/* -----------------------------------------------------------
-   REMOVE ALL DIALOG BOXES (UI + shadow DOM)
------------------------------------------------------------- */
-const removeAllZegoDialogs = () => {
-  // Add more selectors just in case
-  document.querySelectorAll(`
-    div[class*="zego-dialog"],
-    div[class*="zego-modal"],
-    div[class*="zego-confirm"],
-    div[class*="zego-leave"],
-    div[class*="leaveRoom"],
-    div[class*="room-content_leaveRoomDialog__"],
-    div[class*="zego-uikit-dialog"],
-    div[class*="zego-dialog-wrapper"],
-    div[class*="zp_modal_container"],
-    div[class*="zp_common_dialog"]
-  `).forEach(el => el.remove());
-};
+export default function useWebRTC(socket) {
+  const zegoInstanceRef = useRef(null);
 
-/* Remove Shadow DOM dialogs (used in Zego 2.17.x) */
-const killShadowDialogs = () => {
-  document.querySelectorAll("zego-uikit-dialog, zego-dialog").forEach(node => {
-    if (node.shadowRoot) node.shadowRoot.innerHTML = "";
-    node.remove();
-  });
-};
-
-/* Repeated removal (Zego recreates 6–10 times in v2.17) */
-const forceRemoveDialogsRepeatedly = () => {
-  for (let i = 0; i < 30; i++) {
-    setTimeout(() => {
-      removeAllZegoDialogs();
-      killShadowDialogs();
-    }, i * 100);
-  }
-};
-
-/* -----------------------------------------------------------
-   DISABLE INTERNAL CONFIRM (Zego 2.17 new APIs)
------------------------------------------------------------- */
-const disableZegoConfirmDialogs = () => {
-  try {
-    if (zegoInstance?._pluginEngine?._zgEx) {
-      const ex = zegoInstance._pluginEngine._zgEx;
-
-      // Old confirm APIs
-      ex.showDialog = () => null;
-      ex.showConfirm = () => null;
-      ex.showLeavingView = () => null;
-      ex.showResumeDialog = () => null; // Added
-
-      // Prebuilt leave confirm APIs
-      ex.showLeaveRoomDialog = () => null;
-      ex.showLeaveRoomConfirmDialog = () => null;
-
-      // New 2.17 service
-      if (ex._commonDialogService) {
-        ex._commonDialogService.show = () => {};
-        ex._commonDialogService.confirm = () => Promise.resolve(true);
-        ex._commonDialogService.showConfirm = () => Promise.resolve(true);
-      }
-
-      // New 2.17 confirm hook - CRITICAL
-      ex._leaveRoomConfirm = () => Promise.resolve(true);
-
-      ex._showCommonDialog = () => null;
-      ex._commonDialog = () => null;
-      
-      // Also override the destroy method if possible to prevent cleanup dialogs
-      const originalDestroy = zegoInstance.destroy;
-      zegoInstance.destroy = function(...args) {
-          disableZegoConfirmDialogs(); // Call again just before destruction
-          return originalDestroy.apply(this, args);
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to disable Zego confirms:", err);
-  }
-};
-
-/* -----------------------------------------------------------
-   CLEANUP AND LEAVE CALL
------------------------------------------------------------- */
-const cleanupZegoCall = () => {
-  // Ensure dialogs are disabled immediately before destroying
-  disableZegoConfirmDialogs(); 
-  
-  if (zegoInstance) {
+  const cleanupZegoCall = () => {
     try {
-      zegoInstance.destroy();
-    } catch {
-      // Sometimes destroy fails, force cleanup
-    }
-    zegoInstance = null;
-  }
+      zegoInstanceRef.current?.destroy();
+    } catch {}
+    zegoInstanceRef.current = null;
 
-  if (localMediaStream) {
-    localMediaStream.getTracks().forEach((t) => t.stop());
-    localMediaStream = null;
-  }
+    const container = document.getElementById("zego-call-container");
+    if (container) container.innerHTML = "";
+  };
 
-  // Remove the container content after cleanup
-  const container = document.getElementById("zego-call-container");
-  if (container) container.innerHTML = "";
-
-  forceRemoveDialogsRepeatedly(); // Final forceful cleanup
-};
-
-const leaveZegoCall = () => {
-  cleanupZegoCall();
-  return true;
-};
-
-/* -----------------------------------------------------------
-   MAIN HOOK EXPORT
------------------------------------------------------------- */
-export default function useWebRTC() {
   const startUIKitCall = async ({
     roomID,
     userID,
     userName,
     callType,
+    setNetworkQuality,
+    setPermissionsOK,
+    toast,
     endCallCallback,
+    setIsMuted,
+    setIsVideoOff,
   }) => {
     try {
+      await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === "video",
+      });
+      setPermissionsOK(true);
+
       const { data } = await api.post("/zego/token", { roomID, userID });
-      if (!data?.token) throw new Error("Token failed");
 
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
         ZEGO_APP_ID,
@@ -150,81 +54,76 @@ export default function useWebRTC() {
       );
 
       const zp = ZegoUIKitPrebuilt.create(kitToken);
-      zegoInstance = zp;
+      zegoInstanceRef.current = zp;
 
       const container = document.getElementById("zego-call-container");
-      if (!container) {
-        toast.error("Call container missing");
-        return;
-      }
+      if (!container) throw new Error("Missing Zego container");
 
       zp.joinRoom({
         container,
         scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
 
+        showPreJoinView: false,
+        showLeavingView: false,
+        showLeaveRoomConfirmDialog: false,
+        showUserList: false,
+        showTextChat: false,
+        showRoomDetailsButton: false,
+        showScreenSharingButton: false,
+        autoHideFooter: false,
+        showMinimizeButton: false,
+
         turnOnCameraWhenJoining: callType === "video",
         turnOnMicrophoneWhenJoining: true,
-        showPreJoinView: false,
 
-        // Disable dialogs in configuration
-        sharedConfigs: {
-          showLeaveRoomDialog: false,
-          showLeaveRoomConfirmDialog: false,
-        },
-
-        advancedConfig: {
-          showLeaveRoomDialog: false,
-          showLeaveRoomConfirmDialog: false,
-          showResumeDialog: false,
-          showLeavingView: false,
-        },
-
-        onJoinRoom: () => {
-          try {
-            const stream = zp.getLocalStream();
-            if (stream) localMediaStream = stream;
-          } catch {}
-
-          // Disable internal APIs and remove stray dialogs immediately after joining
-          disableZegoConfirmDialogs();
-          forceRemoveDialogsRepeatedly();
-        },
-
+        // 🔥 Intercept Zego leave
         onLeaveRoom: () => {
-          // This fires when Zego's internal logic initiates leaving
-          cleanupZegoCall();
-          endCallCallback && endCallCallback();
+          endCallCallback?.();
+
+          const receiver = roomID.split("_").find((id) => id !== userID);
+          if (receiver && socket) {
+            socket.emit("endCall", { to: receiver, roomID });
+          }
+        },
+
+        onNetworkQualityStatus: (q) => {
+          if (q.level <= 2) setNetworkQuality("poor");
+          else if (q.level <= 4) setNetworkQuality("medium");
+          else setNetworkQuality("good");
+        },
+
+        onLocalUserMediaStateUpdate: ({ type, state }) => {
+          if (type === "audio") setIsMuted(state === "Mute");
+          if (type === "video") setIsVideoOff(state === "Off");
         },
       });
-
-      /* Override hangup button (v2.17 generates dynamic components) - CRITICAL */
-      setTimeout(() => {
-        document.querySelectorAll("button").forEach(btn => {
-          // Check for 'Leave' or 'Hang up' text in multiple languages/cases
-          const btnText = btn.innerText.toLowerCase();
-          if (btnText.includes("leave") || btnText.includes("hang up") || btnText.includes("end")) {
-            // Apply the direct hangup logic only if it hasn't been applied (to prevent double clicks)
-            if (!btn.hasAttribute('data-zego-override')) {
-                btn.onclick = (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  leaveZegoCall(); // Direct call to our cleanup logic
-                  return false;
-                };
-                btn.setAttribute('data-zego-override', 'true'); // Mark as overridden
-            }
-          }
-        });
-
-        killShadowDialogs(); // Final cleanup after components are rendered
-      }, 1200); // Increased delay slightly for better component rendering
-
-    } catch (error) {
-      console.error("Call init error:", error);
-      toast.error("Failed to init call");
+    } catch (err) {
+      console.error("Call error:", err);
+      if (err.name === "NotAllowedError" || err.name === "NotFoundError") {
+        setPermissionsOK(false);
+      }
+      toast?.({
+        title: "Call Failed",
+        description: err.message,
+        status: "error",
+      });
       cleanupZegoCall();
     }
   };
 
-  return { startUIKitCall, cleanupZegoCall, leaveZegoCall };
+  const toggleAudio = (shouldTurnOn) => {
+    zegoInstanceRef.current?.useLocalUser?.setMicrophone(shouldTurnOn);
+  };
+
+  const toggleVideo = (shouldTurnOn) => {
+    zegoInstanceRef.current?.useLocalUser?.setCamera(shouldTurnOn);
+  };
+
+  return {
+    startUIKitCall,
+    cleanupZegoCall,
+    toggleAudio,
+    toggleVideo,
+    zegoInstanceRef,
+  };
 }

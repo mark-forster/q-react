@@ -1,3 +1,4 @@
+// src/components/MessageContainer.jsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flex,
@@ -12,7 +13,6 @@ import {
   MenuItem,
   useColorModeValue,
   useToast,
-  Box,
   Tooltip,
   Modal,
   ModalOverlay,
@@ -21,32 +21,23 @@ import {
   ModalBody,
   ModalFooter,
   Button,
-  Spinner,
 } from "@chakra-ui/react";
 
 import {
   selectedConversationAtom,
   messagesAtom,
-  conversationsAtom,
 } from "../atoms/messageAtom";
 import userAtom from "../atoms/userAtom";
 
-import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
+import { useRecoilState, useRecoilValue } from "recoil";
 import { useSocket } from "../context/SocketContext";
 
 import axios from "axios";
-import {
-  FiPhone,
-  FiVideo,
-  FiMinimize2,
-  FiMaximize2,
-  FiX,
-} from "react-icons/fi";
-
+import { FiPhone, FiVideo } from "react-icons/fi";
 import { CiMenuKebab } from "react-icons/ci";
+
 import Message from "./Message";
 import MessageInput from "./MessageInput";
-import useWebRTC from "../hooks/useWebRTC";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
@@ -55,49 +46,41 @@ const api = axios.create({
 });
 
 const MessageContainer = () => {
-  const [selectedConversation, setSelectedConversation] = useRecoilState(
-    selectedConversationAtom
-  );
+  const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
+
   const currentUser = useRecoilValue(userAtom);
   const { socket, onlineUsers } = useSocket();
-  const setConversations = useSetRecoilState(conversationsAtom);
 
   const toast = useToast();
   const messageEndRef = useRef(null);
+
   const [loadingMessages, setLoadingMessages] = useState(true);
 
-  // CALL UI STATES
-  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
-  const [currentCallType, setCurrentCallType] = useState("audio");
-  const [isRingingModalOpen, setIsRingingModalOpen] = useState(false);
-  const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] =
-    useState(false);
-
   const [incomingCallData, setIncomingCallData] = useState(null);
-  const [currentRoomID, setCurrentRoomID] = useState(null);
-  const [isCallMaximized, setIsCallMaximized] = useState(false);
+  const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
 
-  const { startUIKitCall, cleanupZegoCall, leaveZegoCall } = useWebRTC();
+  const [activeCallWindow, setActiveCallWindow] = useState(null);
+
+  const callEndedShownRef = useRef(false); // 🔥 prevents multiple toast
 
   const isOnline =
     selectedConversation?.userId &&
     onlineUsers.includes(selectedConversation.userId);
 
-  /* Load messages */
+  // LOAD MESSAGES
   useEffect(() => {
     const getMessages = async () => {
       if (!selectedConversation?._id) return;
-
       setMessages([]);
       setLoadingMessages(true);
-
       try {
         const res = await api.get(
           `/messages/conversation/${selectedConversation._id}`
         );
-        setMessages(res.data);
+        setMessages(res.data || []);
       } catch {
+        toast({ title: "Failed to load messages", status: "error" });
       } finally {
         setLoadingMessages(false);
       }
@@ -106,136 +89,165 @@ const MessageContainer = () => {
     getMessages();
   }, [selectedConversation?._id]);
 
-  /* Auto scroll */
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* END CALL */
-  const handleEndCallLogic = (selfEnded = true) => {
-    setIsCallMaximized(false);
-
-    if (selfEnded) leaveZegoCall();
-    else cleanupZegoCall();
-
-    setIsCallModalOpen(false);
-    setIsIncomingCallModalOpen(false);
-    setIsRingingModalOpen(false);
-
-    const receiver =
-      selectedConversation?.userId || incomingCallData?.from;
-
-    if (selfEnded && receiver) {
-      socket.emit("endCall", { to: receiver });
+  const closeCallWindow = () => {
+    if (activeCallWindow && !activeCallWindow.closed) {
+      activeCallWindow.close();
     }
-
-    setIncomingCallData(null);
-    setCurrentRoomID(null);
+    setActiveCallWindow(null);
   };
 
-  /* SOCKET EVENTS */
+  const handleEndCallLogic = (selfEnded = true) => {
+    closeCallWindow();
+    setIncomingCallData(null);
+    setIsIncomingCallModalOpen(false);
+
+    if (selfEnded && selectedConversation?.userId) {
+      socket.emit("endCall", {
+        to: selectedConversation.userId,
+      });
+    }
+  };
+
+  // SOCKET EVENTS
   useEffect(() => {
     if (!socket) return;
 
     socket.on("incomingCall", ({ from, name, callType, roomID }) => {
+      if (activeCallWindow && !activeCallWindow.closed) {
+        socket.emit("callRejected", { to: from, roomID });
+        return;
+      }
+
       setIncomingCallData({ from, name, callType, roomID });
       setIsIncomingCallModalOpen(true);
     });
 
     socket.on("callEnded", () => {
+      if (!callEndedShownRef.current) {
+        callEndedShownRef.current = true;
+        toast({ title: "Call ended", status: "error" });
+      }
       handleEndCallLogic(false);
     });
 
     socket.on("callRejected", () => {
-      setIsCallModalOpen(false);
-      setIsRingingModalOpen(false);
-      cleanupZegoCall();
+      handleEndCallLogic(false);
     });
+
+    socket.on("callTimeout", () => {
+      handleEndCallLogic(false);
+    });
+
+    const interval = setInterval(() => {
+      if (activeCallWindow && activeCallWindow.closed) {
+        setActiveCallWindow(null);
+        setIncomingCallData(null);
+        setIsIncomingCallModalOpen(false);
+      }
+    }, 200);
 
     return () => {
       socket.off("incomingCall");
       socket.off("callEnded");
       socket.off("callRejected");
+      socket.off("callTimeout");
+      clearInterval(interval);
     };
-  }, [socket]);
+  }, [socket, activeCallWindow]);
 
-  /* ACCEPT CALL */
+  // RECEIVE MESSAGE FROM POPUP
+  useEffect(() => {
+    const handler = (event) => {
+      if (
+        event.data?.type === "call-ended-by-peer" ||
+        event.data?.type === "call-ended-self"
+      ) {
+        closeCallWindow();
+        setIncomingCallData(null);
+        setIsIncomingCallModalOpen(false);
+      }
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [activeCallWindow]);
+
+  // ACCEPT CALL
   const handleAnswerIncomingCall = () => {
     const data = incomingCallData;
     if (!data) return;
 
+    callEndedShownRef.current = false;
+
     setIsIncomingCallModalOpen(false);
-    setCurrentCallType(data.callType);
-    setIsCallModalOpen(true);
 
-    socket.emit("answerCall", { to: data.from });
+    socket.emit("answerCall", { to: data.from, roomID: data.roomID });
 
-    setTimeout(() => {
-      startUIKitCall({
-        roomID: data.roomID,
-        userID: currentUser._id,
-        userName: currentUser.username,
-        callType: data.callType,
-        endCallCallback: () => handleEndCallLogic(true),
-      });
-    }, 250);
+    const callURL = `/call/${data.roomID}?type=${data.callType}&user=${currentUser._id}&name=${currentUser.username}&accepted=true`;
+    const newWindow = window.open(
+      callURL,
+      "_blank",
+      "width=800,height=600,resizable=yes"
+    );
+
+    setActiveCallWindow(newWindow);
   };
 
-  /* REJECT CALL */
+  // REJECT CALL
   const handleRejectIncomingCall = () => {
-    if (!incomingCallData) return;
+    const d = incomingCallData;
+    if (!d) return;
 
-    socket.emit("callRejected", { to: incomingCallData.from });
-    setIsIncomingCallModalOpen(false);
-    cleanupZegoCall();
+    socket.emit("callRejected", { to: d.from, roomID: d.roomID });
+
     setIncomingCallData(null);
+    setIsIncomingCallModalOpen(false);
   };
 
-  /* START OUTGOING CALL */
+  // OUTGOING CALL
   const handleStartCall = (type) => {
-    if (!selectedConversation?.userId) return;
+    const receiver = selectedConversation?.userId;
+    if (!receiver) return;
 
-    setCurrentCallType(type);
-    setIsRingingModalOpen(true);
+    callEndedShownRef.current = false; // reset for next call
 
-    const roomID = [currentUser._id, selectedConversation.userId]
-      .sort()
-      .join("_");
+    if (activeCallWindow && !activeCallWindow.closed) {
+      toast({ title: "Already in a call.", status: "warning" });
+      return;
+    }
 
-    setCurrentRoomID(roomID);
+    const roomID = [currentUser._id, receiver].sort().join("_");
 
     socket.emit("callUser", {
-      userToCall: selectedConversation.userId,
+      userToCall: receiver,
       from: currentUser._id,
       name: currentUser.username,
       roomID,
       callType: type,
     });
 
-    socket.once("callAccepted", () => {
-      setIsRingingModalOpen(false);
-      setIsCallModalOpen(true);
+    const callURL = `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}`;
+    const newWindow = window.open(
+      callURL,
+      "_blank",
+      "width=800,height=600,resizable=yes"
+    );
 
-      startUIKitCall({
-        roomID,
-        userID: currentUser._id,
-        userName: currentUser.username,
-        callType: type,
-        endCallCallback: () => handleEndCallLogic(true),
-      });
-    });
+    setActiveCallWindow(newWindow);
   };
 
   const containerBg = useColorModeValue("white", "gray.800");
 
-  const callPartnerName = incomingCallData
-    ? incomingCallData.name
-    : selectedConversation?.username;
+  const callPartnerName =
+    selectedConversation?.username || incomingCallData?.name;
 
   const callPartnerPic =
     selectedConversation?.userProfilePic?.url || "/no-pic.jpeg";
 
-  /* UI RENDER */
   return (
     <Flex flex={70} bg={containerBg} p={4} flexDir="column">
       {/* HEADER */}
@@ -245,14 +257,14 @@ const MessageContainer = () => {
         </Avatar>
 
         <Flex flexDir="column">
-          <Text fontWeight="bold">{selectedConversation?.username}</Text>
+          <Text fontWeight="bold">{callPartnerName}</Text>
           <Text fontSize="xs" color="gray.500">
             {isOnline ? "Online" : "Offline"}
           </Text>
         </Flex>
 
         <Flex ml="auto" gap={2}>
-          {isOnline && (
+          {!activeCallWindow && isOnline && (
             <>
               <Tooltip label="Audio Call">
                 <IconButton
@@ -291,16 +303,10 @@ const MessageContainer = () => {
       <Divider my={2} />
 
       {/* MESSAGES */}
-      <Flex
-        flexGrow={1}
-        flexDir="column"
-        overflowY="auto"
-        p={4}
-        gap={4}
-      >
+      <Flex flexGrow={1} flexDir="column" overflowY="auto" p={4} gap={4}>
         {loadingMessages ? (
           <Text textAlign="center" color="gray.500">
-            Loading...
+            Loading messages…
           </Text>
         ) : (
           messages.map((m) => (
@@ -318,63 +324,7 @@ const MessageContainer = () => {
       {/* INPUT */}
       <MessageInput setMessages={setMessages} />
 
-      {/* ACTIVE CALL MODAL */}
-      {isCallModalOpen && (
-        <Modal isOpen isCentered size="xl" closeOnOverlayClick={false}>
-          <ModalOverlay />
-          <ModalContent bg="gray.900" color="white" p={0}>
-            <ModalHeader bg="gray.800" p={2}>
-              <Flex justify="space-between" align="center">
-                <Flex align="center">
-                  <Avatar size="xs" src={callPartnerPic} mr={2} />
-                  {currentCallType.toUpperCase()} call with{" "}
-                  <b>{callPartnerName}</b>
-                </Flex>
-
-                <Flex gap={1}>
-                  <IconButton
-                    size="xs"
-                    variant="ghost"
-                    bg="red.500"
-                    _hover={{ bg: "red.600" }}
-                    icon={<FiX />}
-                    onClick={() => handleEndCallLogic(true)}
-                  />
-                </Flex>
-              </Flex>
-            </ModalHeader>
-
-            <ModalBody p={0}>
-              <Box id="zego-call-container" w="100%" h="400px" />
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      )}
-
-      {/* OUTGOING CALL */}
-      {isRingingModalOpen && (
-        <Modal isOpen isCentered>
-          <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>
-              Calling {selectedConversation?.username}...
-            </ModalHeader>
-            <ModalBody textAlign="center">
-              <Spinner size="lg" />
-            </ModalBody>
-            <ModalFooter>
-              <Button
-                colorScheme="red"
-                onClick={() => handleEndCallLogic(true)}
-              >
-                Cancel
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-      )}
-
-      {/* INCOMING CALL */}
+      {/* INCOMING CALL MODAL */}
       {incomingCallData && (
         <Modal isOpen={isIncomingCallModalOpen} isCentered>
           <ModalOverlay />
@@ -392,7 +342,6 @@ const MessageContainer = () => {
               <Button colorScheme="red" onClick={handleRejectIncomingCall}>
                 Reject
               </Button>
-
               <Button
                 colorScheme="green"
                 onClick={handleAnswerIncomingCall}
