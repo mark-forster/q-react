@@ -1,3 +1,4 @@
+// Message.jsx
 import React, { useState } from "react";
 import {
   Flex,
@@ -12,28 +13,27 @@ import {
   ModalFooter,
   Button,
   VStack,
-  Input,
-  InputGroup,
-  InputLeftElement,
   HStack,
   useColorModeValue,
-  Checkbox,
   Tooltip,
   IconButton,
-  Image,
-  Spinner,
 } from "@chakra-ui/react";
+
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
   PopoverBody,
 } from "@chakra-ui/react";
-import { SearchIcon } from "@chakra-ui/icons";
+
 import { BsCheckAll } from "react-icons/bs";
 import { CiMenuKebab } from "react-icons/ci";
 import { FaEdit, FaForward, FaTrash } from "react-icons/fa";
-import { MdDoneAll } from "react-icons/md";
+
+import moment from "moment";
+import AttachmentDisplay from "./AttachmentDisplay";
+import { useDisclosure } from "@chakra-ui/react";
+
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import {
   selectedConversationAtom,
@@ -41,21 +41,15 @@ import {
   conversationsAtom,
 } from "../atoms/messageAtom";
 import userAtom from "../atoms/userAtom";
-import moment from "moment";
 import useDeleteMessage from "../hooks/useDeleteMessage";
-import axios from "axios";
-import AttachmentDisplay from "./AttachmentDisplay";
-import toast from "react-hot-toast";
-import { useDisclosure } from '@chakra-ui/react';
-import ForwardMessageModal from "./ForwardMessageModal";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
-const api = axios.create({
-  baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
-  withCredentials: true,
-});
-
-const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) => {
+const DeleteMessageModal = ({
+  isOpen,
+  onClose,
+  onDelete,
+  loading,
+  ownMessage,
+}) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
@@ -63,12 +57,11 @@ const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) 
         <ModalHeader>Delete Message</ModalHeader>
         <ModalBody>
           <Text mb={4}>
-            {ownMessage ? (
-              "Would you like to delete this message for everyone or just for yourself?"
-            ) : (
-              "Would you like to delete this message just for yourself?"
-            )}
+            {ownMessage
+              ? "Delete for everyone or only for you?"
+              : "Delete this message only for you?"}
           </Text>
+
           <VStack spacing={4}>
             {ownMessage && (
               <Button
@@ -80,6 +73,7 @@ const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) 
                 Delete for Everyone
               </Button>
             )}
+
             <Button
               w="100%"
               variant="outline"
@@ -91,6 +85,7 @@ const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) 
             </Button>
           </VStack>
         </ModalBody>
+
         <ModalFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
@@ -106,85 +101,135 @@ const Message = ({ ownMessage, message }) => {
   const user = useRecoilValue(userAtom);
   const conversations = useRecoilValue(conversationsAtom);
   const { deleteMessage, loading } = useDeleteMessage();
-  const setEditingMessage = useSetRecoilState(editingMessageAtom);
 
+  const setEditingMessage = useSetRecoilState(editingMessageAtom);
   const [imgLoaded, setImgLoaded] = useState(false);
-  const { isOpen: isForwardModalOpen, onOpen: onForwardModalOpen, onClose: onForwardModalClose } = useDisclosure();
-  const { isOpen: isDeleteModalOpen, onOpen: onDeleteModalOpen, onClose: onDeleteModalClose } = useDisclosure();
+
+  const {
+    isOpen: isForwardModalOpen,
+    onOpen: onForwardModalOpen,
+    onClose: onForwardModalClose,
+  } = useDisclosure();
+  const {
+    isOpen: isDeleteModalOpen,
+    onOpen: onDeleteModalOpen,
+    onClose: onDeleteModalClose,
+  } = useDisclosure();
+
   const [messageToForward, setMessageToForward] = useState(null);
 
-  const ownMessageBgColor = useColorModeValue("blue.500", "blue.500");
-  const otherMessageBgColor = useColorModeValue("gray.300", "gray.600");
-  const otherMessageTextColor = useColorModeValue("black", "white");
-  const timestampColor = useColorModeValue("gray.500", "gray.400");
-  const menuIconColor = useColorModeValue("gray.600", "gray.300");
+  const ownMessageBg = useColorModeValue("blue.500", "blue.500");
+  const otherBg = useColorModeValue("gray.300", "gray.600");
+  const otherText = useColorModeValue("black", "white");
+  const timeColor = useColorModeValue("gray.500", "gray.400");
 
   const hasText = Boolean((message?.text || "").trim());
   const hasAttachments =
     Array.isArray(message?.attachments) && message.attachments.length > 0;
 
-  if (!hasText && !hasAttachments && !message?.img) {
-    return null;
-  }
+  // 🔥 call message flag
+  const isCallMessage = Boolean(message?.callInfo);
+
+  // =======================
+  //   CALL BUBBLE (Telegram style)
+  // =======================
+  const renderCallMessage = () => {
+    const info = message.callInfo;
+    if (!info) return null;
+
+    const isAudio = info.callType === "audio";
+    const callIcon = isAudio ? "📞" : "📹";
+
+    const direction = ownMessage ? "Outgoing" : "Incoming";
+    const callWord = isAudio ? "call" : "video call";
+
+    let label = "";
+
+    if (info.status === "completed") {
+      const mins = Math.floor((info.duration || 0) / 60);
+      const secs = (info.duration || 0) % 60;
+      const durStr =
+        mins > 0 ? `${mins}m ${secs}s` : `${secs || 0} seconds`;
+      label = `${direction} ${callWord} (${durStr})`;
+    } else if (info.status === "missed") {
+      label = `Missed ${callWord}`;
+    } else if (info.status === "declined") {
+      label = `Declined ${callWord}`;
+    } else if (info.status === "canceled") {
+      label = `Canceled ${callWord}`;
+    } else {
+      // fallback
+      label = `${direction} ${callWord}`;
+    }
+
+    return (
+      <Flex
+        bg={ownMessage ? "blue.500" : "gray.400"}
+        color={ownMessage ? "white" : "black"}
+        px={3}
+        py={2}
+        borderRadius="md"
+        maxW="70%"
+        alignItems="center"
+        gap={2}
+      >
+        <Text fontSize="lg">{callIcon}</Text>
+        <Text fontSize="sm" fontWeight="500">
+          {label}
+        </Text>
+      </Flex>
+    );
+  };
+
+  // မည်သည့် content မရှိရင် (text/attach/call) → render မလုပ်
+  if (!hasText && !hasAttachments && !isCallMessage) return null;
 
   const handleEdit = () => setEditingMessage(message);
   const handleForward = () => {
     setMessageToForward(message);
     onForwardModalOpen();
   };
+  const handleDelete = () => onDeleteModalOpen();
 
-  const handleDelete = () => {
-    onDeleteModalOpen();
-  };
-
-  const handleFinalDelete = async (deleteForEveryone) => {
-    if (loading) return;
-    await deleteMessage(message._id, deleteForEveryone);
-    onDeleteModalClose();
-  };
-
-  const renderMenuIcons = () => {
-    return (
-      <HStack spacing={2}>
-        {ownMessage && hasText && (
-          <Tooltip label="Edit" hasArrow placement="top" openDelay={150}>
-            <IconButton
-              icon={<FaEdit />}
-              aria-label="Edit message"
-              onClick={handleEdit}
-              size="sm"
-              variant="ghost"
-              colorScheme="blue"
-            />
-          </Tooltip>
-        )}
-        <Tooltip label="Forward" hasArrow placement="top" openDelay={150}>
+  const renderMenuIcons = () => (
+    <HStack spacing={2}>
+      {ownMessage && hasText && (
+        <Tooltip label="Edit" hasArrow>
           <IconButton
-            icon={<FaForward />}
-            aria-label="Forward message"
-            onClick={handleForward}
+            icon={<FaEdit />}
+            aria-label="Edit"
             size="sm"
             variant="ghost"
-            colorScheme="blue"
+            onClick={handleEdit}
           />
         </Tooltip>
-        <Tooltip label="Delete" hasArrow placement="top" openDelay={150}>
-          <IconButton
-            icon={<FaTrash />}
-            aria-label="Delete message"
-            onClick={handleDelete}
-            size="sm"
-            variant="ghost"
-            colorScheme="red"
-            isDisabled={loading}
-          />
-        </Tooltip>
-      </HStack>
-    );
-  };
+      )}
+
+      <Tooltip label="Forward" hasArrow>
+        <IconButton
+          icon={<FaForward />}
+          aria-label="Forward"
+          size="sm"
+          variant="ghost"
+          onClick={handleForward}
+        />
+      </Tooltip>
+
+      <Tooltip label="Delete" hasArrow>
+        <IconButton
+          icon={<FaTrash />}
+          aria-label="Delete"
+          size="sm"
+          variant="ghost"
+          onClick={handleDelete}
+          isDisabled={loading}
+        />
+      </Tooltip>
+    </HStack>
+  );
 
   const Bubble = ({ children, align = "flex-start" }) => (
-    <Flex gap={1} alignItems="center" direction="column" alignSelf={align}>
+    <Flex direction="column" alignSelf={align}>
       {children}
     </Flex>
   );
@@ -193,158 +238,130 @@ const Message = ({ ownMessage, message }) => {
     <>
       {ownMessage ? (
         <Flex gap={2} alignSelf="flex-end" alignItems="flex-end">
-          <Flex gap={1} alignItems="center">
-            <Popover placement="top-end">
-              <PopoverTrigger>
-                <IconButton
-                  icon={<CiMenuKebab />}
-                  aria-label="Message menu"
-                  size="xs"
-                  variant="ghost"
-                  color={menuIconColor}
-                  mt="-16px"
-                  marginLeft={"auto"}
-                />
-              </PopoverTrigger>
-              <PopoverContent w="auto" _focus={{ outline: "none" }}>
-                <PopoverBody p={2}>{renderMenuIcons()}</PopoverBody>
-              </PopoverContent>
-            </Popover>
-            <Bubble align="flex-end">
-              {message.isForwarded && (
-                <Text fontSize="xs" color={timestampColor} fontStyle="italic">
-                  Forwarded
+          <Popover placement="top-end">
+            <PopoverTrigger>
+              <IconButton
+                icon={<CiMenuKebab />}
+                aria-label="menu"
+                size="xs"
+                variant="ghost"
+                mt="-16px"
+              />
+            </PopoverTrigger>
+            <PopoverContent w="auto">
+              <PopoverBody p={2}>{renderMenuIcons()}</PopoverBody>
+            </PopoverContent>
+          </Popover>
+
+          <Bubble align="flex-end">
+            {/* CALL MESSAGE */}
+            {isCallMessage && renderCallMessage()}
+
+            {/* NORMAL TEXT (call message တွေအတွက် backend က text="" ထားလို့ မထွက်တော့) */}
+            {hasText && (
+              <Flex bg={ownMessageBg} p={2} borderRadius="md" maxW="70vw">
+                <Text color="white" whiteSpace="pre-wrap">
+                  {message.text}
                 </Text>
-              )}
-              {hasText && (
-                <Flex
-                  bg={ownMessageBgColor}
-                  p={2}
-                  borderRadius="md"
-                  alignItems="center"
-                  maxW="70vw"
-                >
-                  <Text
-                    color="white"
-                    wordBreak="break-word"
-                    whiteSpace="pre-wrap"
-                  >
-                    {message.text}
-                  </Text>
-                </Flex>
-              )}
-              {hasAttachments &&
-                message.attachments.map((att, idx) => (
-                  <AttachmentDisplay
-                    key={idx}
-                    attachment={att}
-                    imgLoaded={imgLoaded}
-                    setImgLoaded={setImgLoaded}
-                    messageId={message._id}
-                    isSender={ownMessage}
-                  />
-                ))}
-              <Flex
-                mt={1}
-                alignItems="center"
-                justifyContent="flex-end"
-                w="100%"
-              >
-                <Text fontSize="xs" color={timestampColor} mr={1}>
-                  {moment(message?.updatedAt || message?.createdAt).format(
-                    "h:mm A"
-                  )}
-                </Text>
-                {message.status === "sending" ? (
-                  <Spinner size="xs" color="gray.300" />
-                ) : (
-                  <Box
-                    color={
-                      Array.isArray(message?.seenBy) &&
-                      message.seenBy.length > 1
-                        ? "cyan.400"
-                        : "gray.300"
-                    }
-                    fontWeight="bold"
-                  >
-                    <BsCheckAll size={16} />
-                  </Box>
-                )}
               </Flex>
-            </Bubble>
-          </Flex>
+            )}
+
+            {/* ATTACHMENTS */}
+            {hasAttachments &&
+              message.attachments.map((att, idx) => (
+                <AttachmentDisplay
+                  key={idx}
+                  attachment={att}
+                  imgLoaded={imgLoaded}
+                  setImgLoaded={setImgLoaded}
+                  messageId={message._id}
+                  isSender={true}
+                />
+              ))}
+
+            {/* TIME + Seen */}
+            <Flex mt={1} justifyContent="flex-end" alignItems="center">
+              <Text fontSize="xs" color={timeColor} mr={1}>
+                {moment(message.updatedAt || message.createdAt).format(
+                  "h:mm A"
+                )}
+              </Text>
+
+              {Array.isArray(message?.seenBy) &&
+              message.seenBy.length > 1 ? (
+                <Box color="cyan.400">
+                  <BsCheckAll size={16} />
+                </Box>
+              ) : (
+                <Box color="gray.300">
+                  <BsCheckAll size={16} />
+                </Box>
+              )}
+            </Flex>
+          </Bubble>
+
           <Avatar src={user?.profilePic?.url} w={8} h={8} />
         </Flex>
       ) : (
+        // RECEIVER BUBBLE
         <Flex gap={2} alignSelf="flex-start" alignItems="flex-end">
-          <Avatar src={selectedConversation?.userProfilePic?.url} w={8} h={8} />
-          <Flex gap={1} alignItems="center">
-            <Bubble align="flex-start">
-              {message.isForwarded && (
-                <Text fontSize="xs" color={timestampColor} fontStyle="italic">
-                  Forwarded
-                </Text>
-              )}
-              {hasText && (
-                <Flex
-                  bg={otherMessageBgColor}
-                  p={2}
-                  borderRadius="md"
-                  alignItems="center"
-                  maxW="70vw"
-                >
-                  <Text
-                    color={otherMessageTextColor}
-                    wordBreak="break-word"
-                    whiteSpace="pre-wrap"
-                  >
-                    {message.text}
-                  </Text>
-                </Flex>
-              )}
-              {hasAttachments &&
-                message.attachments.map((att, idx) => (
-                  <AttachmentDisplay
-                    key={idx}
-                    attachment={att}
-                    imgLoaded={imgLoaded}
-                    setImgLoaded={setImgLoaded}
-                    messageId={message._id}
-                    isSender={ownMessage}
-                  />
-                ))}
-              <Flex
-                mt={1}
-                alignItems="center"
-                justifyContent="flex-start"
-                w="100%"
-              >
-                <Text fontSize="xs" color={timestampColor}>
-                  {moment(message?.updatedAt || message?.createdAt).format(
-                    "h:mm A"
-                  )}
+          <Avatar
+            src={selectedConversation?.userProfilePic?.url}
+            w={8}
+            h={8}
+          />
+
+          <Bubble align="flex-start">
+            {/* CALL MESSAGE */}
+            {isCallMessage && renderCallMessage()}
+
+            {/* NORMAL TEXT */}
+            {hasText && (
+              <Flex bg={otherBg} p={2} borderRadius="md" maxW="70vw">
+                <Text color={otherText} whiteSpace="pre-wrap">
+                  {message.text}
                 </Text>
               </Flex>
-            </Bubble>
-            <Popover placement="top-start">
-              <PopoverTrigger>
-                <IconButton
-                  icon={<CiMenuKebab />}
-                  aria-label="Message menu"
-                  size="xs"
-                  variant="ghost"
-                  color={useColorModeValue("gray.600", "gray.300")}
-                  mt="-16px"
+            )}
+
+            {/* ATTACHMENTS */}
+            {hasAttachments &&
+              message.attachments.map((att, idx) => (
+                <AttachmentDisplay
+                  key={idx}
+                  attachment={att}
+                  imgLoaded={imgLoaded}
+                  setImgLoaded={setImgLoaded}
+                  messageId={message._id}
+                  isSender={false}
                 />
-              </PopoverTrigger>
-              <PopoverContent w="auto" _focus={{ outline: "none" }}>
-                <PopoverBody p={2}>{renderMenuIcons()}</PopoverBody>
-              </PopoverContent>
-            </Popover>
-          </Flex>
+              ))}
+
+            <Text fontSize="xs" color={timeColor} mt={1}>
+              {moment(message.updatedAt || message.createdAt).format(
+                "h:mm A"
+              )}
+            </Text>
+          </Bubble>
+
+          <Popover placement="top-start">
+            <PopoverTrigger>
+              <IconButton
+                icon={<CiMenuKebab />}
+                aria-label="menu"
+                size="xs"
+                variant="ghost"
+                mt="-16px"
+              />
+            </PopoverTrigger>
+            <PopoverContent w="auto">
+              <PopoverBody p={2}>{renderMenuIcons()}</PopoverBody>
+            </PopoverContent>
+          </Popover>
         </Flex>
       )}
 
+      {/* Forward Modal */}
       {messageToForward && (
         <ForwardMessageModal
           isOpen={isForwardModalOpen}
@@ -356,11 +373,14 @@ const Message = ({ ownMessage, message }) => {
           conversations={conversations}
         />
       )}
+
+      {/* Delete Modal */}
       <DeleteMessageModal
         isOpen={isDeleteModalOpen}
         onClose={onDeleteModalClose}
-        messageId={message._id}
-        onDelete={handleFinalDelete}
+        onDelete={async (deleteForEveryone) =>
+          await deleteMessage(message._id, deleteForEveryone)
+        }
         loading={loading}
         ownMessage={ownMessage}
       />
