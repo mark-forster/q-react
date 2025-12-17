@@ -1,4 +1,5 @@
-// MessageContainer.jsx
+// MessageContainer.jsx — FINAL (Telegram-Safe + Full Phone/Video Call + Avatar Fallback + REALTIME EDIT + TYPING)
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flex,
@@ -27,13 +28,15 @@ import {
   selectedConversationAtom,
   messagesAtom,
   conversationsAtom,
+  editingMessageAtom,
 } from "../atoms/messageAtom";
+
 import userAtom from "../atoms/userAtom";
-
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
-import { useSocket } from "../context/SocketContext";
 
+import { useSocket } from "../context/SocketContext";
 import axios from "axios";
+
 import { FiPhone, FiVideo } from "react-icons/fi";
 import { CiMenuKebab } from "react-icons/ci";
 
@@ -41,6 +44,7 @@ import Message from "./Message";
 import MessageInput from "./MessageInput";
 
 import incomingRingtone from "../assets/sounds/incomeRing.mp3";
+import { getInitials, getAvatarColor } from "../utils/avatarHelpers";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
@@ -51,39 +55,35 @@ const api = axios.create({
 const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
-  const setConversations = useSetRecoilState(conversationsAtom);
+  const [conversations, setConversations] = useRecoilState(conversationsAtom);
+
+  const setEditingMessage = useSetRecoilState(editingMessageAtom);
 
   const currentUser = useRecoilValue(userAtom);
   const { socket, onlineUsers } = useSocket();
 
   const toast = useToast();
-  const messageEndRef = useRef(null);
-
-  const [loadingMessages, setLoadingMessages] = useState(true);
-
-  const [incomingCallData, setIncomingCallData] = useState(null);
-  const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] =
-    useState(false);
-
-  const [activeCallWindow, setActiveCallWindow] = useState(null);
-
-  const callEndedShownRef = useRef(false);
-  const incomingToneRef = useRef(null);
-
-  // ✅ seen API ကို တပြန်တခါသာခေါ်ဖို့
-  const seenRequestRef = useRef({}); // { "<conversationId>-<userId>": true }
-
-  const isOnline =
-    selectedConversation?.userId &&
-    onlineUsers.includes(selectedConversation.userId);
-
   const containerBg = useColorModeValue("white", "gray.800");
 
-  // ringtone
+  const messageEndRef = useRef(null);
+  const seenRequestRef = useRef({});
+  const incomingToneRef = useRef(null);
+  const callEndedShownRef = useRef(false);
+
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [typingUsers, setTypingUsers] = useState([]);
+
+  // ----- CALL -----
+  const [incomingCallData, setIncomingCallData] = useState(null);
+  const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
+  const [activeCallWindow, setActiveCallWindow] = useState(null);
+
+  // =====================================================
+  //  RINGTONE
+  // =====================================================
   useEffect(() => {
     incomingToneRef.current = new Audio(incomingRingtone);
     incomingToneRef.current.loop = true;
-
     return () => incomingToneRef.current?.pause();
   }, []);
 
@@ -100,186 +100,141 @@ const MessageContainer = () => {
     } catch {}
   };
 
-  // ✅ Load messages when change conversation
+  // =====================================================
+  // LOAD MESSAGES (Telegram-safe)
+  // =====================================================
   useEffect(() => {
     const load = async () => {
-      if (!selectedConversation?._id) return;
+      if (
+        !selectedConversation?._id ||
+        selectedConversation.mock ||
+        String(selectedConversation._id).startsWith("mock-")
+      ) {
+        setMessages([]);
+        setLoadingMessages(false);
+        return;
+      }
+
       setLoadingMessages(true);
       try {
         const res = await api.get(
           `/messages/conversation/${selectedConversation._id}`
         );
-        // backend မှာ sort already ခဲ့ပေမယ့် 여기서လည်း 한번 safety sort
         const data = Array.isArray(res.data) ? res.data : [];
+
         data.sort(
           (a, b) =>
             new Date(a.createdAt).getTime() -
             new Date(b.createdAt).getTime()
         );
+
         setMessages(data);
-      } catch (e) {
-        console.error("Load messages error", e);
+      } catch (err) {
+        console.error("Load messages error:", err);
       }
       setLoadingMessages(false);
     };
-    load();
-  }, [selectedConversation?._id, setMessages]);
 
-  // ✅ Auto scroll bottom when messages change
+    load();
+  }, [selectedConversation?._id, selectedConversation?.mock, setMessages]);
+
+  // Scroll bottom
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const closeCallWindow = () => {
-    if (activeCallWindow && !activeCallWindow.closed) {
-      activeCallWindow.close();
-    }
-    setActiveCallWindow(null);
-  };
-
-  const handleEndCallLogic = () => {
-    closeCallWindow();
-    stopIncomingTone();
-    setIncomingCallData(null);
-    setIsIncomingCallModalOpen(false);
-  };
-
-  // ------------------------------------------------
-  // ✅ SOCKET EVENTS (newMessage + seen + call events)
-  // ------------------------------------------------
+  // =====================================================
+  // SOCKET EVENTS (NEW MESSAGE, SEEN, TYPING, CALL FLOW, EDIT)
+  // =====================================================
   useEffect(() => {
     if (!socket) return;
 
-    // ====== NEW_MESSAGE (call + normal) ======
+    /* ---------- NEW MESSAGE ---------- */
     const handleNewMessage = (msg) => {
-      // 1) Messages list ထဲမှာ မရှိတောင်မှ ထည့်မယ် (duplicate 방지)
+      if (!msg?._id) return;
+      if (String(msg.conversationId) !== String(selectedConversation?._id)) return;
+
       setMessages((prev) => {
-        if (!msg?._id) return prev;
-
-        const exists = prev.some((m) => m._id === msg._id);
-        if (exists) return prev;
-
-        const updated = [...prev, msg];
-        updated.sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() -
-            new Date(b.createdAt).getTime()
+        if (prev.some((m) => m._id === msg._id)) return prev;
+        return [...prev, msg].sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
         );
-        return updated;
-      });
-
-      // 2) Conversation list ကို update + reorder to top
-      setConversations((prev) => {
-        if (!prev || !prev.length) return prev;
-        const cid =
-          typeof msg.conversationId === "object"
-            ? msg.conversationId.toString()
-            : String(msg.conversationId || "");
-
-        let found = false;
-        const updated = prev.map((c) => {
-          const cId =
-            typeof c._id === "object" ? c._id.toString() : String(c._id);
-          if (cId === cid) {
-            found = true;
-            const lastText =
-              msg.text ||
-              (Array.isArray(msg.attachments) &&
-              msg.attachments.length > 0
-                ? "Attachment"
-                : "");
-            return {
-              ...c,
-              lastMessage: {
-                ...(c.lastMessage || {}),
-                text: lastText,
-                sender: msg.sender,
-                updatedAt: msg.updatedAt || msg.createdAt,
-                seenBy: c.lastMessage?.seenBy || [],
-              },
-              // receiver ဖက် only → unreadCount +1, sender ဖက်မှာတော့ မတက်စေချင်ရင် logic ထပ်ပြင်နိုင်
-              unreadCount:
-                msg.sender === currentUser?._id
-                  ? c.unreadCount || 0
-                  : (c.unreadCount || 0) + 1,
-            };
-          }
-          return c;
-        });
-
-        if (!found) return prev;
-
-        const cidStr = String(
-          typeof msg.conversationId === "object"
-            ? msg.conversationId.toString()
-            : msg.conversationId
-        );
-        const top = updated.find((c) =>
-          (c._id || "").toString() === cidStr
-        );
-        const rest = updated.filter(
-          (c) => (c._id || "").toString() !== cidStr
-        );
-        return top ? [top, ...rest] : updated;
       });
     };
 
-    // ===== messagesSeen (server → everyone) =====
+    /* ---------- SEEN ---------- */
     const handleMessagesSeen = ({ conversationId, userId }) => {
-      if (!conversationId || !userId) return;
-
-      const cid = String(conversationId);
-      const uid = String(userId);
-
-      // Messages tick update
       setMessages((prev) =>
-        prev.map((m) => {
-          const mCid =
-            typeof m.conversationId === "object"
-              ? m.conversationId.toString()
-              : String(m.conversationId || "");
-          if (mCid !== cid) return m;
-
-          const seenBy = Array.isArray(m.seenBy) ? m.seenBy.map(String) : [];
-          if (seenBy.includes(uid)) return m;
-          return {
-            ...m,
-            seenBy: [...seenBy, uid],
-          };
-        })
-      );
-
-      // Conversation.lastMessage seenBy update
-      setConversations((prev) =>
-        prev.map((c) => {
-          const cId =
-            typeof c._id === "object" ? c._id.toString() : String(c._id);
-          if (cId !== cid) return c;
-
-          const lb = c.lastMessage || {};
-          const seenBy = Array.isArray(lb.seenBy)
-            ? lb.seenBy.map(String)
-            : [];
-          if (seenBy.includes(uid)) return c;
-
-          return {
-            ...c,
-            lastMessage: {
-              ...lb,
-              seenBy: [...seenBy, uid],
-            },
-            // current user ကို 제외하고, unreadCount ကို 0 သို့မဟုတ် 적절하게 내려ရင် ဒီမှာလုပ်နိုင်
-          };
-        })
+        prev.map((m) =>
+          String(m.conversationId) === String(conversationId)
+            ? {
+                ...m,
+                seenBy: m.seenBy?.includes(userId)
+                  ? m.seenBy
+                  : [...(m.seenBy || []), userId],
+              }
+            : m
+        )
       );
     };
 
-    // ====== CALL EVENTS ======
+    /* ---------- TYPING ---------- */
+    const handleTyping = ({ conversationId, userId }) => {
+      if (
+        String(conversationId) !== String(selectedConversation?._id) ||
+        String(userId) === String(currentUser._id)
+      )
+        return;
+
+      setTypingUsers((prev) =>
+        prev.includes(String(userId)) ? prev : [...prev, String(userId)]
+      );
+    };
+
+    const handleStopTyping = ({ conversationId, userId }) => {
+      if (String(conversationId) !== String(selectedConversation?._id)) return;
+
+      setTypingUsers((prev) => prev.filter((id) => id !== String(userId)));
+    };
+
+    // =====================================================
+    // REAL-TIME MESSAGE EDIT EVENT
+    // =====================================================
+    const handleMessageUpdated = ({ messageId, newText }) => {
+      // Update messages
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, text: newText, updatedAt: new Date().toISOString() }
+            : m
+        )
+      );
+
+      // Update conversation lastMessage
+      setConversations((prev) =>
+        prev.map((c) =>
+          c._id === selectedConversation?._id &&
+          c.lastMessage?._id === messageId
+            ? {
+                ...c,
+                lastMessage: {
+                  ...c.lastMessage,
+                  text: newText,
+                  updatedAt: new Date().toISOString(),
+                },
+              }
+            : c
+        )
+      );
+    };
+
+    /* ---------- CALL EVENTS ---------- */
     const handleIncomingCall = ({ from, name, callType, roomID }) => {
       if (activeCallWindow && !activeCallWindow.closed) {
         socket.emit("callRejected", { to: from, roomID });
         return;
       }
+
       setIncomingCallData({ from, name, callType, roomID });
       setIsIncomingCallModalOpen(true);
       callEndedShownRef.current = false;
@@ -288,135 +243,154 @@ const MessageContainer = () => {
 
     const handleCallAccepted = ({ roomID }) => {
       if (activeCallWindow && !activeCallWindow.closed) {
-        activeCallWindow.postMessage(
-          { type: "call-accepted", roomID },
-          "*"
-        );
+        activeCallWindow.postMessage({ type: "call-accepted", roomID }, "*");
       }
     };
 
-    const handleCallEnded = () => {
+    const endCall = (msg, status) => {
       if (!callEndedShownRef.current) {
+        toast({ title: msg, status });
         callEndedShownRef.current = true;
-        toast({ title: "Call ended", status: "info" });
       }
-      handleEndCallLogic();
-    };
 
-    const handleCallRejected = () => {
-      toast({ title: "Call rejected", status: "error" });
-      handleEndCallLogic();
-    };
+      stopIncomingTone();
 
-    const handleCallTimeout = () => {
-      toast({ title: "Missed call", status: "info" });
-      handleEndCallLogic();
+      if (activeCallWindow && !activeCallWindow.closed) {
+        activeCallWindow.close();
+      }
+
+      setActiveCallWindow(null);
+      setIncomingCallData(null);
+      setIsIncomingCallModalOpen(false);
     };
 
     socket.on("newMessage", handleNewMessage);
     socket.on("messagesSeen", handleMessagesSeen);
+    socket.on("typing", handleTyping);
+    socket.on("stopTyping", handleStopTyping);
+    socket.on("messageUpdated", handleMessageUpdated);
+
     socket.on("incomingCall", handleIncomingCall);
     socket.on("callAccepted", handleCallAccepted);
-    socket.on("callEnded", handleCallEnded);
-    socket.on("callRejected", handleCallRejected);
-    socket.on("callTimeout", handleCallTimeout);
+    socket.on("callEnded", () => endCall("Call ended", "info"));
+    socket.on("callRejected", () => endCall("Call rejected", "error"));
+    socket.on("callTimeout", () => endCall("Missed call", "info"));
 
-    // detect popup closed
     const interval = setInterval(() => {
       if (activeCallWindow && activeCallWindow.closed) {
-        handleEndCallLogic();
+        endCall("Call ended", "info");
       }
     }, 200);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messagesSeen", handleMessagesSeen);
+      socket.off("typing", handleTyping);
+      socket.off("stopTyping", handleStopTyping);
+      socket.off("messageUpdated", handleMessageUpdated);
+
       socket.off("incomingCall", handleIncomingCall);
       socket.off("callAccepted", handleCallAccepted);
-      socket.off("callEnded", handleCallEnded);
-      socket.off("callRejected", handleCallRejected);
-      socket.off("callTimeout", handleCallTimeout);
+      socket.off("callEnded");
+      socket.off("callRejected");
+      socket.off("callTimeout");
+
       clearInterval(interval);
     };
   }, [
     socket,
+    selectedConversation?._id,
+    currentUser?._id,
     activeCallWindow,
+    toast,
     setMessages,
     setConversations,
-    toast,
-    currentUser?._id,
   ]);
 
-  // ------------------------------------------------
-  // ✅ When user open chat → mark messages as seen
-  // ------------------------------------------------
+  // =====================================================
+  // MARK AS SEEN
+  // =====================================================
   useEffect(() => {
-    if (!selectedConversation?._id || !currentUser?._id) return;
+    if (
+      !selectedConversation?._id ||
+      selectedConversation?.mock ||
+      !currentUser?._id
+    )
+      return;
+
     const cid = String(selectedConversation._id);
     const uid = String(currentUser._id);
     const key = `${cid}-${uid}`;
 
-    // သင်မဖတ်ရသေးတဲ့ message ရှိ/မရှိ စစ်မယ်
-    const hasUnseen = messages.some((m) => {
-      const senderId = String(m.sender);
-      if (senderId === uid) return false; // ကိုယ်ပို့တဲ့ message ကို ကိုယ်ဖတ်ပြီလို သတ်မှတ်မယ်
+    const hasUnseen = messages.some(
+      (m) => String(m.sender) !== uid && !m.seenBy?.includes(uid)
+    );
 
-      const seenBy = Array.isArray(m.seenBy)
-        ? m.seenBy.map(String)
-        : [];
-      return !seenBy.includes(uid);
-    });
-
-    if (!hasUnseen) return; // ဖတ်ပြီးသားဆိုရင် မခေါ်ရ
-
-    if (seenRequestRef.current[key]) {
-      // ဒီ convo/ဒီ user ကို အရင်ဆုံးကြေညာဖူးပြီ
-      return;
-    }
-
+    if (!hasUnseen || seenRequestRef.current[key]) return;
     seenRequestRef.current[key] = true;
 
-    api
-      .put(`/messages/seen/${cid}`)
-      .catch((err) => {
-        console.error("Seen API error:", err);
-        // error ဖြစ်ရင် next render မှာ ပြန်ခေါ်အောင် flag ပြန်ဖျက်
-        delete seenRequestRef.current[key];
-      });
-  }, [messages, selectedConversation?._id, currentUser?._id]);
+    api.put(`/messages/seen/${cid}`).catch(() => {
+      delete seenRequestRef.current[key];
+    });
+  }, [messages, selectedConversation?._id, selectedConversation?.mock, currentUser?._id]);
 
-  // ===== accept =====
+  // =====================================================
+  // CALL ACTIONS
+  // =====================================================
   const handleAnswerIncomingCall = () => {
-    const data = incomingCallData;
-    if (!data) return;
+    const d = incomingCallData;
+    if (!d) return;
 
     stopIncomingTone();
     setIsIncomingCallModalOpen(false);
 
-    socket.emit("answerCall", { to: data.from, roomID: data.roomID });
+    socket.emit("answerCall", { to: d.from, roomID: d.roomID });
 
-    const url = `/call/${data.roomID}?type=${data.callType}&user=${currentUser._id}&name=${currentUser.username}&accepted=true`;
+    const win = window.open(
+      `/call/${d.roomID}?type=${d.callType}&user=${currentUser._id}&name=${currentUser.username}&accepted=true`,
+      "_blank",
+      "width=800,height=600"
+    );
 
-    const win = window.open(url, "_blank", "width=800,height=600");
     setActiveCallWindow(win);
   };
 
-  // ===== reject =====
   const handleRejectIncomingCall = () => {
-    const data = incomingCallData;
-    if (!data) return;
+    const d = incomingCallData;
+    if (!d) return;
 
-    socket.emit("callRejected", { to: data.from, roomID: data.roomID });
+    socket.emit("callRejected", { to: d.from, roomID: d.roomID });
+
     stopIncomingTone();
     setIncomingCallData(null);
     setIsIncomingCallModalOpen(false);
   };
 
-  // ===== start outgoing =====
   const handleStartCall = (type) => {
-    const receiver = selectedConversation?.userId;
-    if (!receiver) return;
+  // Group call ဖြစ်လား၊ single call ဖြစ်လား ခွဲမယ်
+  if (selectedConversation?.isGroup) {
+    // ⭐ Group Call
+    const conversationId = selectedConversation._id;
+    const roomID = conversationId; // group call room ကို convId နဲ့ချည်းသတ်မယ်
 
+    socket.emit("callUser", {
+      conversationId,             // ⭐ ဒီကိန်းနဲ့ backend က group members အကုန်ယူမယ်
+      from: currentUser._id,
+      name: currentUser.username,
+      roomID,
+      callType: type,
+    });
+
+    const win = window.open(
+      `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}`,
+      "_blank",
+      "width=800,height=600"
+    );
+    setActiveCallWindow(win);
+  } else {
+    // ⭐ Single Call (အခုရှိပြီးသား logic)
+    if (!selectedConversation?.userId) return;
+    const receiver = selectedConversation.userId;
     const roomID = [currentUser._id, receiver].sort().join("_");
 
     socket.emit("callUser", {
@@ -427,38 +401,79 @@ const MessageContainer = () => {
       callType: type,
     });
 
-    const url = `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}`;
-    const win = window.open(url, "_blank", "width=800,height=600");
+    const win = window.open(
+      `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}`,
+      "_blank",
+      "width=800,height=600"
+    );
     setActiveCallWindow(win);
-  };
+  }
+};
 
-  const name = selectedConversation?.username;
+  // =====================================================
+  // UI
+  // =====================================================
+  const title =
+    selectedConversation?.name ||
+    selectedConversation?.username ||
+    "Chat";
+
+  const isOnline = selectedConversation?.userId
+    ? onlineUsers.includes(String(selectedConversation.userId))
+    : false;
+
   const profilePic =
-    selectedConversation?.userProfilePic?.url || "/no-pic.jpeg";
+    selectedConversation?.userProfilePic?.url ||
+    selectedConversation?.userProfilePic ||
+    "";
+
+  // Status text under name (Telegram-style)
+  const statusText = typingUsers.length
+    ? "Typing..."
+    : isOnline
+    ? "Online"
+    : "Offline";
+
+  const showGreenBadge = isOnline && selectedConversation?.userId;
+
 
   return (
     <Flex flex={70} bg={containerBg} p={4} flexDir="column">
       {/* HEADER */}
-      <Flex w="100%" h={12} align="center">
-        <Avatar src={profilePic} w={9} h={9}>
-          {isOnline && <AvatarBadge boxSize="1em" bg="green.500" />}
-        </Avatar>
+      <Flex h={12} align="center">
+        {profilePic ? (
+          <Avatar src={profilePic} w={9} h={9}>
+            {showGreenBadge && <AvatarBadge bg="green.500" />}
+          </Avatar>
+        ) : (
+          <Flex
+            w="36px"
+            h="36px"
+            borderRadius="full"
+            align="center"
+            justify="center"
+            bg={getAvatarColor(title)}
+            color="white"
+            fontWeight="bold"
+          >
+            {getInitials(title)}
+          </Flex>
+        )}
 
-        <Flex flexDir="column" ml={2}>
-          <Text fontWeight="bold">{name}</Text>
+        <Flex ml={2} direction="column">
+          <Text fontWeight="bold">{title}</Text>
           <Text fontSize="xs" color="gray.500">
-            {isOnline ? "Online" : "Offline"}
+            {statusText}
           </Text>
         </Flex>
 
         <Flex ml="auto" gap={2}>
-          {!activeCallWindow && isOnline && (
             <>
               <Tooltip label="Audio Call">
                 <IconButton
                   size="sm"
-                  icon={<FiPhone />}
                   variant="ghost"
+                  icon={<FiPhone />}
                   onClick={() => handleStartCall("audio")}
                 />
               </Tooltip>
@@ -466,21 +481,15 @@ const MessageContainer = () => {
               <Tooltip label="Video Call">
                 <IconButton
                   size="sm"
-                  icon={<FiVideo />}
                   variant="ghost"
+                  icon={<FiVideo />}
                   onClick={() => handleStartCall("video")}
                 />
               </Tooltip>
             </>
-          )}
 
           <Menu>
-            <MenuButton
-              as={IconButton}
-              size="sm"
-              icon={<CiMenuKebab />}
-              variant="ghost"
-            />
+            <MenuButton as={IconButton} icon={<CiMenuKebab />} size="sm" />
             <MenuList>
               <MenuItem>View Profile</MenuItem>
             </MenuList>
@@ -490,27 +499,45 @@ const MessageContainer = () => {
 
       <Divider my={2} />
 
-      {/* Messages */}
       <Flex flexGrow={1} overflowY="auto" p={4} flexDir="column" gap={4}>
-        {loadingMessages ? (
-          <Text textAlign="center" color="gray.500">
-            Loading…
-          </Text>
-        ) : (
-          messages.map((m) => (
-            <Message
-              key={m._id}
-              message={m}
-              ownMessage={String(m.sender) === String(currentUser._id)}
-            />
-          ))
-        )}
-        <div ref={messageEndRef} />
-      </Flex>
+        {loadingMessages ? (
+          <Text textAlign="center" color="gray.400">
+            Loading…
+          </Text>
+        ) : (
+          messages.length === 0 ? (
+            <Flex
+              flex={1}
+              align="center"
+              justify="center"
+              flexDir="column"
+              textAlign="center"
+              h="100%"
+              p={8}
+            >
+              <Text fontSize="xl" fontWeight="bold" color="gray.400">
+                👋 Say Hello!
+              </Text>
+              <Text fontSize="md" color="gray.500">
+                Start a new conversation ..........
+              </Text>
+            </Flex>
+          ) : (
+            messages.map((m) => (
+              <Message
+                key={m._id}
+                message={m}
+                ownMessage={String(m.sender) === String(currentUser._id)}
+              />
+            ))
+          )
+        )}
+        <div ref={messageEndRef} />
+      </Flex>
 
       <MessageInput setMessages={setMessages} />
 
-      {/* Incoming Call Popup */}
+      {/* INCOMING CALL MODAL */}
       {incomingCallData && (
         <Modal isOpen={isIncomingCallModalOpen} isCentered>
           <ModalOverlay />

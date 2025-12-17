@@ -1,219 +1,332 @@
-import {
-  Flex,
-  Avatar,
-  Text,
-  useColorModeValue,
-  Box,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  IconButton,
-  WrapItem,
-  AvatarBadge,
-  Stack,
-  Spinner,
-} from "@chakra-ui/react";
+// Conversation.jsx — Messenger Style + Telegram Avatar Fallback + View User/Group
+
 import React, { useState } from "react";
+import {
+  Flex,
+  Avatar,
+  Text,
+  useColorModeValue,
+  Box,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  IconButton,
+  WrapItem,
+  AvatarBadge,
+  Stack,
+  Spinner,
+  Portal,
+} from "@chakra-ui/react";
+
 import { useRecoilValue, useRecoilState } from "recoil";
 import userAtom from "../atoms/userAtom";
 import {
-  selectedConversationAtom,
-  conversationsAtom,
+  selectedConversationAtom,
+  conversationsAtom,
 } from "../atoms/messageAtom";
 
 import { CiMenuKebab } from "react-icons/ci";
-import { BsImage, BsCheckAll } from "react-icons/bs";
+import { BsCheckAll } from "react-icons/bs";
 import { useSocket } from "../context/SocketContext";
-import { FiPhone, FiVideo, FiPhoneMissed, FiX } from "react-icons/fi"; // Icons ထပ်ထည့်
+import { FiPhone, FiVideo, FiPhoneMissed, FiX } from "react-icons/fi";
 
-const Conversation = ({ conversation, isOnline, onDelete }) => {
-  const currentUser = useRecoilValue(userAtom);
-  const [conversations, setConversations] = useRecoilState(conversationsAtom);
-  const [selectedConversation, setSelectedConversation] = useRecoilState(
-    selectedConversationAtom
-  );
+import { getInitials, getAvatarColor } from "../utils/avatarHelpers";
 
-  const [isDeleting, setIsDeleting] = useState(false);
+const Conversation = ({
+  conversation,
+  isOnline,
+  onDelete,
+  onOpenGroupProfile,
+  onOpenUserProfile,
+  deletingId
+}) => {
+  const currentUser = useRecoilValue(userAtom);
+  const [conversations, setConversations] = useRecoilState(conversationsAtom);
+  const [selectedConversation, setSelectedConversation] = useRecoilState(
+    selectedConversationAtom
+  );
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const { socket } = useSocket();
+  const { socket } = useSocket();
 
-  const merged =
-    conversations.find((c) => c._id === conversation._id) || conversation;
+  // Merge from global list
+  const merged =
+    conversations.find((c) => c._id === conversation._id) || conversation;
 
-  // friend
-  const friend = Array.isArray(merged.participants)
-    ? merged.participants.find((p) => p?._id && p._id !== currentUser?._id)
-    : null;
+  const isGroup = merged.isGroup === true;
 
-  const chatName = merged.isGroup
-    ? merged.name || "Group Chat"
-    : friend?.name || friend?.username || "Unknown";
+  const friend = !isGroup
+    ? merged.participants?.find((p) => p?._id !== currentUser?._id)
+    : null;
 
-  const pic = friend?.profilePic;
-  const profilePic = typeof pic === "string" ? pic : pic?.url || "";
+  const chatName = isGroup
+    ? merged.name || "Group Chat"
+    : friend?.name || friend?.username || "Unknown";
 
-  const lastMessage = merged.lastMessage;
-  const lastText = lastMessage?.text;
-  const callInfo = lastMessage?.callInfo; // callInfo ကို ထုတ်ယူ
+  const pic = friend?.profilePic;
+  const profilePic = typeof pic === "string" ? pic : pic?.url || "";
 
-  const unread = Number(merged.unreadCount || 0);
+  const lastMessage = merged.lastMessage;
+  const lastText = lastMessage?.text;
+  const callInfo = lastMessage?.callInfo;
 
-  const selectedBg = useColorModeValue("gray.200", "gray.700");
-  const hoverBg = useColorModeValue("gray.100", "gray.600");
+  const unread = Number(merged.unreadCount || 0);
 
-  const onClick = () => {
-    if (selectedConversation?._id === merged._id) {
-      setSelectedConversation(null);
-      return;
-    }
+  const selectedBg = useColorModeValue("gray.200", "gray.700");
+  const hoverBg = useColorModeValue("gray.100", "gray.600");
 
-    setSelectedConversation({
-      _id: merged._id,
-      userId: merged.isGroup ? "group-id" : friend?._id,
-      username: merged.isGroup ? "Group Chat" : friend?.username,
-      name: chatName,
-      userProfilePic: profilePic,
-      isGroup: merged.isGroup,
-    });
+  // Click conversation
+  const onClick = () => {
+    if (isGroup) {
+      setSelectedConversation({
+        _id: merged._id,
+        userId: "group-id",
+        username: "Group Chat",
+        name: chatName,
+        userProfilePic: null,
+        isGroup: true,
+        participants: merged.participants,
+      });
+    } else {
+      setSelectedConversation({
+        _id: merged._id,
+        userId: friend?._id,
+        username: friend?.username,
+        name: chatName,
+        userProfilePic: profilePic,
+        isGroup: false,
+      });
+    }
 
-    setConversations((prev) =>
-      prev.map((c) => (c._id === merged._id ? { ...c, unreadCount: 0 } : c))
-    );
+    setConversations((prev) =>
+      prev.map((c) =>
+        c._id === merged._id ? { ...c, unreadCount: 0 } : c
+      )
+    );
 
-    socket?.emit("joinConversationRoom", { conversationId: merged._id });
-  };
+    socket?.emit("joinConversationRoom", { conversationId: merged._id });
+  };
 
-  const handleDelete = async () => {
-    if (isDeleting) return;
+  // Delete chat handler
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (isDeleting) return;
+    setIsDeleting(true);
 
-    setIsDeleting(true);
-    try {
-      await onDelete?.(merged._id);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
+    try {
+      await onDelete(merged._id);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
-  // detect sender
-  const lastSenderId =
-    (typeof lastMessage?.sender === "object" &&
-      lastMessage?.sender?._id) ||
-    lastMessage?.sender ||
-    null;
+  // Seen indicator
+  const lastSenderId =
+    lastMessage?.sender?._id || lastMessage?.sender || null;
 
-  const meId = String(currentUser?._id || "");
-  const friendId = String(friend?._id || "");
+  const meId = String(currentUser?._id);
+  const friendId = String(friend?._id);
 
-  const seenList = Array.isArray(lastMessage?.seenBy)
-    ? lastMessage.seenBy.map(String)
-    : [];
+  const seenList = lastMessage?.seenBy
+    ? lastMessage.seenBy.map(String)
+    : [];
 
-  const isSeen =
-    lastMessage && String(lastSenderId) === meId && seenList.includes(friendId);
+  const isSeen =
+    !isGroup &&
+    lastMessage &&
+    String(lastSenderId) === meId &&
+    seenList.includes(friendId);
 
-  // ================================
-  // CALL PREVIEW RENDERING (Updated)
-  // ================================
-  const renderPreview = () => {
-    if (callInfo) {
-      const isAudio = callInfo.callType === "audio";
-      let icon = isAudio ? <FiPhone size={14} /> : <FiVideo size={14} />;
-      let previewText = "";
-      let color = "gray.500";
+  const renderPreview = () => {
+    if (callInfo) {
+      let icon =
+        callInfo.callType === "audio" ? (
+          <FiPhone size={14} />
+        ) : (
+          <FiVideo size={14} />
+        );
 
-      if (callInfo.status === "missed" || callInfo.status === "timeout") {
-        previewText = isAudio ? "Missed call" : "Missed video call";
-        icon = <FiPhoneMissed size={14} />;
-        color = "red.500";
-      } else if (callInfo.status === "declined" || callInfo.status === "rejected" || callInfo.status === "cancelled") {
-        previewText = isAudio ? "Canceled call" : "Canceled video call";
-        icon = <FiX size={14} />;
-        color = "red.500";
-      } else if (callInfo.status === "outgoing") {
-        previewText = isAudio ? "Outgoing call" : "Outgoing video call";
-        color = "green.500";
-      } else if (callInfo.status === "incoming") {
-        previewText = isAudio ? "Incoming call" : "Incoming video call";
-        color = "green.500";
-      } else if (callInfo.status === "completed") {
-        previewText = "Call ended";
-        color = "gray.500";
-      }
-      
-      return (
-        <Box display="flex" alignItems="center" gap={1} color={color}>
-          {icon}
-          <Text fontSize="xs">{previewText}</Text>
-        </Box>
-      );
-    }
+      let previewText = "";
+      let color = "gray.500";
 
-    if (!lastText) return "No messages yet";
+      if (["missed", "timeout"].includes(callInfo.status)) {
+        icon = <FiPhoneMissed size={14} />;
+        previewText =
+          callInfo.callType === "audio"
+            ? "Missed call"
+            : "Missed video call";
+        color = "red.500";
+      } else if (
+        ["declined", "rejected", "cancelled"].includes(callInfo.status)
+      ) {
+        icon = <FiX size={14} />;
+        previewText = "Canceled call";
+        color = "red.500";
+      } else if (callInfo.status === "incoming") {
+        previewText = "Incoming call";
+        color = "green.500";
+      } else if (callInfo.status === "outgoing") {
+        previewText = "Outgoing call";
+        color = "green.500";
+      } else {
+        previewText = "Call ended";
+      }
 
-    // normal text
-    return lastText.length > 30 ? lastText.slice(0, 30) + "..." : lastText;
-  };
+      return (
+        <Box display="flex" alignItems="center" gap={1} color={color}>
+          {icon}
+          <Text fontSize="xs">{previewText}</Text>
+        </Box>
+      );
+    }
 
-  return (
-    <Flex
-      gap={4}
-      alignItems="center"
-      p={2}
-      borderRadius="md"
-      _hover={{ bg: hoverBg }}
-      bg={selectedConversation?._id === merged._id ? selectedBg : "transparent"}
-      onClick={onClick}
-    >
-      {/* AVATAR */}
-      <WrapItem>
-        <Avatar size="sm" src={profilePic}>
-          <AvatarBadge
-            boxSize="1em"
-            bg={isOnline ? "green.500" : "orange.500"}
-          />
-        </Avatar>
-      </WrapItem>
+    if (!lastText) return "No messages yet";
 
-      {/* TEXT PREVIEW */}
-      <Stack spacing={0} w="full" overflow="hidden">
-        <Text fontWeight={700}>{chatName}</Text>
+    return lastText.length > 30
+      ? lastText.slice(0, 30) + "..."
+      : lastText;
+  };
 
-        <Flex fontSize="xs" alignItems="center" gap={1} overflow="hidden">
-          {renderPreview()}
+  const initials = getInitials(chatName);
+  const color = getAvatarColor(chatName);
 
-          {lastText && String(lastSenderId) === meId && (
-            <BsCheckAll size={16} color={isSeen ? "#4299E1" : "#A0AEC0"} />
-          )}
-        </Flex>
-      </Stack>
+  const isSelected = selectedConversation?._id === merged._id;
 
-      {/* unread badge */}
-      {unread > 0 && (
-        <Flex
-          bg="green.500"
-          color="white"
-          px={2}
-          borderRadius="full"
-          fontSize="xs"
-          fontWeight="700"
-        >
-          {unread}
-        </Flex>
-      )}
+  return (
+   <Flex
+  gap={4}
+  alignItems="center"
+  p={2}
+  borderRadius="md"
+  cursor={isDeleting || deletingId === merged._id ? "not-allowed" : "pointer"}
+  opacity={isDeleting || deletingId === merged._id ? 0.45 : 1}
+  pointerEvents={isDeleting || deletingId === merged._id ? "none" : "auto"}
+  _hover={{ bg: hoverBg }}
+  bg={isSelected ? selectedBg : "transparent"}
+  onClick={onClick}
+>
+      <WrapItem>
+        {isGroup ? (
+          <Flex
+            w="38px"
+            h="38px"
+            borderRadius="full"
+            align="center"
+            justify="center"
+            fontWeight="bold"
+            color="white"
+            bg={color}
+          >
+            {initials}
+          </Flex>
+        ) : profilePic ? (
+          <Avatar size="sm" src={profilePic}>
+            <AvatarBadge
+              boxSize="1em"
+              bg={isOnline ? "green.500" : "orange"}
+            />
+          </Avatar>
+        ) : (
+          <Flex
+            w="38px"
+            h="38px"
+            borderRadius="full"
+            align="center"
+            justify="center"
+            fontWeight="bold"
+            color="white"
+            bg={color}
+          >
+            {getInitials(chatName, friend?.username)}
+          </Flex>
+        )}
+      </WrapItem>
 
-      {/* menu */}
-      <Menu>
-        <MenuButton as={IconButton} size="sm" icon={<CiMenuKebab />} variant="ghost" />
-        <MenuList>
-          <MenuItem onClick={handleDelete} isDisabled={isDeleting}>
-            {isDeleting ? <Spinner size="sm" mr={2} /> : null}
-            Delete
-          </MenuItem>
-        </MenuList>
-      </Menu>
-    </Flex>
-  );
+      <Stack spacing={0} w="full" overflow="hidden">
+        <Flex justify="space-between" align="center">
+          <Text fontWeight={700} noOfLines={1}>
+            {chatName}
+          </Text>
+
+          {unread > 0 && (
+            <Flex
+              bg="green.500"
+              color="white"
+              px={2}
+              borderRadius="full"
+              fontSize="xs"
+              fontWeight="700"
+            >
+              {unread}
+            </Flex>
+          )}
+        </Flex>
+
+        <Flex fontSize="xs" alignItems="center" gap={1}>
+          {renderPreview()}
+          {!isGroup && lastText && String(lastSenderId) === meId && (
+            <BsCheckAll size={16} color={isSeen ? "#4299E1" : "#A0AEC0"} />
+          )}
+        </Flex>
+
+        {isGroup && (
+          <Text fontSize="xs" color="gray.500">
+            {merged.participants?.length || 0} members
+          </Text>
+        )}
+      </Stack>
+
+      {/* Menu (Telegram style: View / Delete) */}
+      <Box
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        <Menu>
+          <MenuButton
+            as={IconButton}
+            icon={<CiMenuKebab />}
+            size="sm"
+            variant="ghost"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <Portal>
+            <MenuList
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              {/* VIEW */}
+              <MenuItem
+                onClick={() => {
+                  if (isGroup) {
+                    onOpenGroupProfile && onOpenGroupProfile(merged);
+                  } else {
+                    onOpenUserProfile && onOpenUserProfile(friend);
+                  }
+                }}
+              >
+                {isGroup ? "View Group" : "View User"}
+              </MenuItem>
+
+              {/* DELETE */}
+              <MenuItem
+                onClick={() => {
+                  handleDelete();
+                }}
+              >
+                {(isDeleting || deletingId === merged._id) && (
+  <Spinner size="sm" mr={2} />
+)}
+                Delete Chat
+              </MenuItem>
+            </MenuList>
+          </Portal>
+        </Menu>
+      </Box>
+    </Flex>
+  );
 };
 
 export default Conversation;

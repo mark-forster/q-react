@@ -1,7 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import useWebRTC from "../hooks/useWebRTC";
-import { Box, Flex, Text, Spinner, Heading, Avatar } from "@chakra-ui/react";
+
+import {
+  Box,
+  Flex,
+  Text,
+  Spinner,
+  Heading,
+  Avatar,
+  Button,
+} from "@chakra-ui/react";
 
 import { useSocket } from "../context/SocketContext";
 import outgoingTone from "../assets/sounds/msgSound.wav";
@@ -14,7 +23,7 @@ const CallPage = () => {
   const userID = params.get("user");
   const userName = params.get("name");
   const callType = params.get("type");
-  const acceptedFlag = params.get("accepted") === "true"; // receiver side
+  const acceptedFlag = params.get("accepted") === "true";
 
   const {
     startUIKitCall,
@@ -25,14 +34,14 @@ const CallPage = () => {
   const [permissionsOK, setPermissionsOK] = useState(true);
   const [networkQuality, setNetworkQuality] = useState("good");
 
-  const [isMuted, setIsMuted] = useState(false);      // still passed to hook
+  const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
-  const timerRef = useRef(null);
   const ringRef = useRef(null);
-  const joinCalledRef = useRef(false); // DOUBLE-JOIN blocker
+  const joinCalledRef = useRef(false);
+  const endedRef = useRef(false);
 
-  // ---- ringtone ----
+  // ====== PLAY OUTGOING RING ======
   const startRing = () => {
     ringRef.current = new Audio(outgoingTone);
     ringRef.current.loop = true;
@@ -45,25 +54,17 @@ const CallPage = () => {
     ringRef.current.currentTime = 0;
   };
 
-  const startTimer = () => {
-    timerRef.current = setInterval(() => {}, 1000); // no UI, but keeps pattern
-  };
-
-  const stopTimer = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
-
-  // ---- join Zego room ----
+  // ====== JOIN ROOM ======
   const joinRoomNow = () => {
     if (joinCalledRef.current) return;
     joinCalledRef.current = true;
 
     if (hasJoined) return;
 
-    setHasJoined(true);
     stopRing();
+    setHasJoined(true);
 
-    startUIKitCall({
+   startUIKitCall({
       roomID,
       userID,
       userName,
@@ -74,16 +75,18 @@ const CallPage = () => {
       endCallCallback: handleInternalEnd,
       setIsMuted,
       setIsVideoOff,
-    }).finally(() => {
-      startTimer();
     });
   };
 
+  // ====== HANDLE END / CLOSE ======
   const handleInternalEnd = () => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+
     cleanupZegoCall();
     stopRing();
-    stopTimer();
 
+    // notify parent window
     if (window.opener) {
       window.opener.postMessage({ type: "call-ended-self" }, "*");
     }
@@ -91,38 +94,45 @@ const CallPage = () => {
     window.close();
   };
 
-  // ---- window closing (back button, etc.) ----
-  useEffect(() => {
-    const onUnload = () => handleInternalEnd();
-    window.addEventListener("beforeunload", onUnload);
+  const handleCancelCall = () => {
+    if (!socket) return;
 
+    stopRing();
+
+    // notify backend
+    socket.emit("cancelCall", {
+      to: params.get("receiver"),
+      roomID,
+    });
+
+    handleInternalEnd();
+  };
+
+  // ====== WINDOW CLOSE EVENT ======
+  useEffect(() => {
+    const beforeUnload = () => handleInternalEnd();
+    window.addEventListener("beforeunload", beforeUnload);
     return () => {
-      window.removeEventListener("beforeunload", onUnload);
-      stopRing();
-      stopTimer();
+      window.removeEventListener("beforeunload", beforeUnload);
       cleanupZegoCall();
+      stopRing();
     };
-    // eslint-disable-next-line
   }, []);
 
-  // ---- initial mount (caller vs receiver) ----
+  // ====== RINGING OR JOIN ======
   useEffect(() => {
     if (acceptedFlag) {
-      // receiver side: already accepted -> join now
       joinRoomNow();
     } else {
-      // caller side: just ringing until accepted
       startRing();
     }
-    // eslint-disable-next-line
   }, [acceptedFlag]);
 
-  // ---- caller gets accepted via postMessage from parent ----
+  // ====== MESSAGE FROM PARENT: CALL ACCEPTED ======
   useEffect(() => {
     const handler = (event) => {
-      if (event.data?.type === "call-accepted") {
-        joinRoomNow();
-      }
+      if (event.data?.type === "call-accepted") joinRoomNow();
+      if (event.data?.type === "force-end-call") handleInternalEnd();
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
@@ -130,15 +140,17 @@ const CallPage = () => {
 
   return (
     <Flex w="100vw" h="100vh" bg="gray.900" color="white">
-      {/* Zego video area */}
+      {/* Zego call UI container */}
       <Box
         id="zego-call-container"
         w="100%"
         h="100%"
-        style={{ display: hasJoined && permissionsOK ? "block" : "none" }}
+        style={{
+          display: hasJoined && permissionsOK ? "block" : "none",
+        }}
       />
 
-      {/* Pre-join Calling overlay (Zego မ join ရသေးသော်လည်း အချိန်တိုအနေနဲ့ပဲ) */}
+      {/* BEFORE JOINING (RINGING) */}
       {!hasJoined && (
         <Flex
           position="absolute"
@@ -151,14 +163,33 @@ const CallPage = () => {
         >
           <Avatar size="2xl" name={userName} />
           <Heading mt={4}>{userName}</Heading>
-          <Text mt={2} color="gray.400">
-            Calling…
-          </Text>
+
+          {acceptedFlag ? (
+            <Text mt={2} color="green.300">
+              Connecting…
+            </Text>
+          ) : (
+            <>
+              <Text mt={2} color="gray.400">
+                Calling…
+              </Text>
+
+              <Button
+                mt={6}
+                bg="red.500"
+                _hover={{ bg: "red.600" }}
+                onClick={handleCancelCall}
+              >
+                Cancel Call
+              </Button>
+            </>
+          )}
+
           <Spinner mt={6} size="xl" />
         </Flex>
       )}
 
-      {/* Permission error overlay */}
+      {/* PERMISSION ERROR */}
       {!permissionsOK && (
         <Flex
           position="absolute"

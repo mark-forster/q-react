@@ -9,12 +9,8 @@ export const conversationsAtom = atom({
 // save selected conversation  atom
 export const selectedConversationAtom = atom({
   key: "selectedConversationAtom",
-  default: {
-    _id: "",
-    userId: "",
-    username: "",
-    userProfilePic: "",
-  },
+ default: null,
+
 });
 
 // save message from current chat box  atom

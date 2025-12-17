@@ -71,7 +71,7 @@ function App() {
   return (
     <>
       <Box position={"relative"} w={"full"}>
-        <Container maxW={pathname === '/' ? {base: "620px", md: "900px"} : "620px"}>
+       
           <Toaster position="top-center" toastOptions={{ duration: 2000 }} />
           
           <Routes>
@@ -93,7 +93,6 @@ function App() {
             <Route path="/call/:roomID" element={<CallPage />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
-        </Container>
       </Box>
     </>
   );

@@ -1,7 +1,4 @@
-// ===============================
-// FIXED MessageInput.jsx
-// Duplicate-Free Version
-// ===============================
+// MessageInput.jsx — FINAL B3 + EDITING + TYPING
 
 import React, { useState, useRef, useEffect } from "react";
 import {
@@ -10,9 +7,7 @@ import {
   Input,
   InputGroup,
   InputRightElement,
-  Spinner,
   IconButton,
-  useColorModeValue,
   HStack,
   Text,
   Grid,
@@ -34,26 +29,33 @@ import {
   selectedConversationAtom,
   conversationsAtom,
   editingMessageAtom,
-  messagesAtom,
 } from "../atoms/messageAtom";
 
-import { useRecoilState, useSetRecoilState, useRecoilValue } from "recoil";
+import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../atoms/userAtom";
 
 import { useAudioRecorder } from "react-audio-voice-recorder";
+import { useSocket } from "../context/SocketContext";
 
+// ===================================================
+// API
+// ===================================================
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
 
-// --- MIME helpers ---
-
+// ===================================================
+// MIME Helpers
+// ===================================================
 function pickSupportedMime() {
   if (window?.MediaRecorder?.isTypeSupported) {
-    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+      return "audio/webm;codecs=opus";
     if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+    if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+    if (MediaRecorder.isTypeSupported("audio/ogg")) return "audio/ogg";
   }
   return "audio/webm";
 }
@@ -61,28 +63,48 @@ function pickSupportedMime() {
 function extFromMime(mime = "") {
   if (mime.includes("webm")) return "webm";
   if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("wav")) return "wav";
   if (mime.includes("mp3")) return "mp3";
   return "webm";
 }
 
+// ===================================================
+// Component
+// ===================================================
 const MessageInput = ({ setMessages }) => {
   const [messageText, setMessageText] = useState("");
-  const [selectedConversation, setSelectedConversation] = useRecoilState(selectedConversationAtom);
-  const setConversations = useSetRecoilState(conversationsAtom);
+
+  const [selectedConversation, setSelectedConversation] =
+    useRecoilState(selectedConversationAtom);
+
   const [editingMessage, setEditingMessage] = useRecoilState(editingMessageAtom);
+
+  const setConversations = useSetRecoilState(conversationsAtom);
   const user = useRecoilValue(userAtom);
 
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [filePreviews, setFilePreviews] = useState([]);
   const [isSending, setIsSending] = useState(false);
 
+  const { socket } = useSocket();
+
+  // Recorder
   const {
     startRecording,
     stopRecording,
     recordingBlob,
     isRecording,
     recordingTime,
-  } = useAudioRecorder({ mimeType: pickSupportedMime() });
+  } = useAudioRecorder({
+    mimeType: pickSupportedMime(),
+    audioConstraints: {
+      channelCount: 1,
+      noiseSuppression: true,
+      echoCancellation: true,
+      sampleRate: 48000,
+    },
+    onNotAllowedOrFound: () => toast.error("Microphone blocked or missing."),
+  });
 
   const [voiceBlob, setVoiceBlob] = useState(null);
   const [audioURL, setAudioURL] = useState(null);
@@ -92,17 +114,25 @@ const MessageInput = ({ setMessages }) => {
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
 
-  // --- Editing mode ---
+  // Typing timeout (for stopTyping)
+  const typingTimeoutRef = useRef(null);
+
+  // ===================================================
+  // APPLY EDITING MESSAGE INTO INPUT
+  // ===================================================
   useEffect(() => {
-    if (editingMessage) {
+    if (editingMessage && editingMessage.text !== undefined) {
       setMessageText(editingMessage.text || "");
       inputRef.current?.focus();
-    } else {
+    } else if (!editingMessage?.replyTo) {
+      // reply mode only => don't clear text
       setMessageText("");
     }
   }, [editingMessage]);
 
-  // --- Voice blob ---
+  // ===================================================
+  // Recorder Blob → URL
+  // ===================================================
   useEffect(() => {
     if (recordingBlob) {
       setVoiceBlob(recordingBlob);
@@ -110,28 +140,42 @@ const MessageInput = ({ setMessages }) => {
     }
   }, [recordingBlob]);
 
-  // --- Audio player ---
+  // ===================================================
+  // Audio Player
+  // ===================================================
   useEffect(() => {
     const p = audioPlayerRef.current;
     if (audioURL) p.src = audioURL;
-    p.addEventListener("ended", () => setIsPlaying(false));
-    return () => p.removeEventListener("ended", () => setIsPlaying(false));
+
+    const onEnd = () => setIsPlaying(false);
+    p.addEventListener("ended", onEnd);
+    return () => p.removeEventListener("ended", onEnd);
   }, [audioURL]);
 
-  // -------------------------
-  // FILE HANDLING
-  // -------------------------
+  // Cleanup typing timer on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
+
+  // ===================================================
+  // Files
+  // ===================================================
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     setSelectedFiles(files);
 
     const previews = files.map((f) => {
-      if (f.type.startsWith("image/")) return { type: "image", url: URL.createObjectURL(f), name: f.name };
+      if (f.type.startsWith("image/"))
+        return { type: "image", url: URL.createObjectURL(f), name: f.name };
       if (f.type.startsWith("video/")) return { type: "video", name: f.name };
       if (f.type.startsWith("audio/")) return { type: "audio", name: f.name };
-      if (f.type === "application/pdf") return { type: "pdf", name: f.name };
-      if (f.type.includes("word")) return { type: "word", name: f.name };
-      if (f.type.includes("excel")) return { type: "excel", name: f.name };
+      if (f.type.includes("pdf")) return { type: "pdf", name: f.name };
+      if (f.type.includes("word") || f.name.endsWith(".doc") || f.name.endsWith(".docx"))
+        return { type: "word", name: f.name };
+      if (f.type.includes("excel") || f.name.endsWith(".xls") || f.name.endsWith(".xlsx"))
+        return { type: "excel", name: f.name };
       return { type: "file", name: f.name };
     });
 
@@ -140,29 +184,144 @@ const MessageInput = ({ setMessages }) => {
   };
 
   const removeFile = (i) => {
-    const nf = selectedFiles.filter((_, idx) => idx !== i);
-    const np = filePreviews.filter((_, idx) => idx !== i);
-    setSelectedFiles(nf);
-    setFilePreviews(np);
-    if (!nf.length) fileInputRef.current.value = null;
+    setSelectedFiles((prev) => prev.filter((_, x) => x !== i));
+    setFilePreviews((prev) => prev.filter((_, x) => x !== i));
+    if (fileInputRef.current) fileInputRef.current.value = null;
   };
 
+  // ===================================================
+  // Remove Audio
+  // ===================================================
   const handleRemoveAudio = () => {
     const p = audioPlayerRef.current;
     p.pause();
-    p.currentTime = 0;
     setIsPlaying(false);
     setAudioURL(null);
     setVoiceBlob(null);
   };
 
-  // ==========================================
-  //          SEND MESSAGE (DUPLICATE FIX)
-  // ==========================================
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (isSending) return;
+  // ===================================================
+  // MESSAGE EDITING LOGIC
+  // ===================================================
+  const updateMessage = async () => {
+    try {
+      const trimmed = messageText.trim();
+      if (!trimmed) {
+        toast.error("Message cannot be empty.");
+        return;
+      }
 
+      if (trimmed === (editingMessage.text || "")) {
+        setEditingMessage(null);
+        setMessageText("");
+        return;
+      }
+
+      const res = await api.put(
+        `/messages/update/${editingMessage._id}`,
+        { newText: trimmed }
+      );
+
+      const updated = res.data.data;
+
+      // Update UI (messages state comes from parent via setMessages)
+      setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c._id === updated.conversationId
+            ? {
+                ...c,
+                lastMessage: {
+                  ...(c.lastMessage || {}),
+                  text: updated.text,
+                  sender: updated.sender,
+                  updatedAt: updated.updatedAt || updated.createdAt,
+                },
+              }
+            : c
+        )
+      );
+
+      // Emit socket event
+      if (socket) {
+        socket.emit("messageEdited", {
+          messageId: updated._id,
+          conversationId: selectedConversation._id,
+          newText: updated.text,
+        });
+      }
+
+      toast.success("Message updated!");
+      setEditingMessage(null);
+      setMessageText("");
+
+      // stop typing when edit done
+      emitStopTyping();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update message.");
+    }
+  };
+
+  // ===================================================
+  // TYPING EVENTS (Telegram-style)
+  // ===================================================
+  const emitTyping = () => {
+    if (
+      !socket ||
+      !user?._id ||
+      !selectedConversation?._id ||
+      selectedConversation.mock ||
+      String(selectedConversation._id).startsWith("mock-")
+    )
+      return;
+
+    socket.emit("typing", {
+      conversationId: selectedConversation._id,
+      userId: user._id,
+    });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      emitStopTyping();
+    }, 1500);
+  };
+
+  const emitStopTyping = () => {
+    if (
+      !socket ||
+      !user?._id ||
+      !selectedConversation?._id ||
+      selectedConversation.mock ||
+      String(selectedConversation._id).startsWith("mock-")
+    )
+      return;
+
+    socket.emit("stopTyping", {
+      conversationId: selectedConversation._id,
+      userId: user._id,
+    });
+  };
+
+  const handleChangeText = (e) => {
+    setMessageText(e.target.value);
+    emitTyping();
+  };
+
+  // ===================================================
+  // SEND MESSAGE (B2 + EDIT MERGE)
+  // ===================================================
+  const handleSendMessage = async (e) => {
+    e?.preventDefault?.();
+
+    // ---------- EDIT MODE ----------
+    if (editingMessage && editingMessage._id) {
+      await updateMessage();
+      return;
+    }
+
+    // ---------- ORIGINAL SEND ----------
     const trimmed = messageText.trim();
     const hasFiles = selectedFiles.length > 0;
     const hasVoice = !!voiceBlob;
@@ -173,110 +332,125 @@ const MessageInput = ({ setMessages }) => {
     }
 
     if (!selectedConversation) {
-      toast.error("Please select a conversation first.");
+      toast.error("Select a conversation first.");
       return;
     }
 
     setIsSending(true);
 
-    // =====================================
-    // TEMP MESSAGE — ONLY FOR SENDER
-    // =====================================
-    const tempId = Date.now().toString();
-
+    // temp message (preview bubble)
+    const tempId = "tmp_" + Date.now();
     const tempMessage = {
       _id: tempId,
       sender: user._id,
       text: trimmed,
+      attachments: [],
       conversationId: selectedConversation._id,
       createdAt: new Date().toISOString(),
-      attachments: [],
       seenBy: [user._id],
       status: "sending",
     };
 
     if (hasFiles) {
-      tempMessage.attachments = selectedFiles.map((file, i) => ({
-        url: filePreviews[i].url,
-        type: filePreviews[i].type,
-        name: file.name,
-      }));
+      tempMessage.attachments = filePreviews;
     } else if (hasVoice) {
       tempMessage.attachments = [
         {
-          url: audioURL,
           type: "audio",
+          url: audioURL,
           name: `voice_${tempId}.${extFromMime(voiceBlob.type)}`,
         },
       ];
     }
 
-    // ------------ IMPORTANT ------------
-    // ✔ ONLY SENDER SHOULD ADD TEMP MESSAGE
-    // ------------------------------------
-    if (user._id !== selectedConversation.userId) {
-      setMessages((prev) => [...prev, tempMessage]);
-    }
+    // 👉 show preview bubble immediately
+    setMessages((prev) => [...prev, tempMessage]);
 
+    // 👉 clear input like Telegram
     setMessageText("");
     setSelectedFiles([]);
     setFilePreviews([]);
     handleRemoveAudio();
     if (fileInputRef.current) fileInputRef.current.value = null;
 
-    // ------------------------------
-    // SEND TO BACKEND
-    // ------------------------------
-    try {
-      const formData = new FormData();
+    // stop typing once sent
+    emitStopTyping();
 
-      if (trimmed) formData.append("message", trimmed);
-      formData.append("recipientId", selectedConversation.userId);
+    // Form data
+    const form = new FormData();
+    if (trimmed) form.append("message", trimmed);
 
-      if (!selectedConversation.mock) {
-        formData.append("conversationId", selectedConversation._id);
-      }
+    if (!selectedConversation.mock)
+      form.append("conversationId", selectedConversation._id);
+    else
+      form.append("recipientId", selectedConversation.userId);
 
-      if (hasFiles) {
-        selectedFiles.forEach((file) => formData.append("files", file));
-      } else if (hasVoice) {
-        const mime = voiceBlob.type || "audio/webm";
-        const ext = extFromMime(mime);
-        const audioFile = new File([voiceBlob], `voice_${Date.now()}.${ext}`, {
-          type: mime,
-        });
-
-        formData.append("files", audioFile);
-      }
-
-      const res = await api.post("/messages", formData);
-      const actualMessage = res.data.data;
-
-      // Replace temp → actual
-      setMessages((prev) =>
-        prev.map((m) => (m._id === tempId ? actualMessage : m))
+    if (hasFiles) {
+      selectedFiles.forEach((f) => form.append("files", f));
+    } else if (hasVoice) {
+      const mime = voiceBlob.type;
+      const ext = extFromMime(mime);
+      const audioFile = new File(
+        [voiceBlob],
+        `voice_${Date.now()}.${ext}`,
+        { type: mime }
       );
-    } catch (err) {
-      toast.error("Failed to send message.");
+      form.append("files", audioFile);
+    }
+
+    try {
+      const res = await api.post("/messages", form);
+      const real = res.data.data;
+
+      // Replace temp
       setMessages((prev) =>
-        prev.map((m) => (m._id === tempId ? { ...m, status: "failed" } : m))
+        prev.map((m) => (m._id === tempId ? real : m))
+      );
+
+      // Promote mock to real conversation
+      if (selectedConversation.mock) {
+        const list = (await api.get("/messages/conversations")).data.conversations;
+        const found = list.find((c) =>
+          c.participants.some((p) => p._id === selectedConversation.userId)
+        );
+
+        if (found) {
+          const friend = found.participants.find(
+            (p) => p._id === selectedConversation.userId
+          );
+
+          setSelectedConversation({
+            _id: found._id,
+            isGroup: false,
+            mock: false,
+            userId: friend._id,
+            username: friend.username,
+            name: friend.name,
+            userProfilePic: friend.profilePic,
+          });
+        }
+      }
+    } catch {
+      toast.error("Failed to send.");
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === tempId ? { ...m, status: "failed" } : m
+        )
       );
     } finally {
       setIsSending(false);
+      handleRemoveAudio();
+      if (fileInputRef.current) fileInputRef.current.value = null;
     }
   };
 
-  // --- Audio play ---
-  const togglePlayPause = () => {
-    const p = audioPlayerRef.current;
-    if (isPlaying) p.pause();
-    else p.play();
-    setIsPlaying(!isPlaying);
-  };
-
+  // ===================================================
+  // Audio Controls
+  // ===================================================
   const toggleRecording = () => {
-    if (isRecording) stopRecording();
-    else {
+    if (isRecording) {
+      stopRecording();
+    } else {
       setSelectedFiles([]);
       setFilePreviews([]);
       handleRemoveAudio();
@@ -284,18 +458,32 @@ const MessageInput = ({ setMessages }) => {
     }
   };
 
+  const togglePlayPause = () => {
+    const p = audioPlayerRef.current;
+    if (isPlaying) p.pause();
+    else p.play();
+    setIsPlaying(!isPlaying);
+  };
+
+  // ===================================================
+  // Enter key send
+  // ===================================================
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage(e);
+      handleSendMessage();
     }
   };
 
-  const showSendBtn = messageText.trim() || selectedFiles.length > 0 || audioURL;
+  const showSendBtn =
+    messageText.trim() || audioURL || selectedFiles.length > 0;
 
+  // ===================================================
+  // UI
+  // ===================================================
   return (
     <>
-      {/* Voice preview */}
+      {/* Audio Preview */}
       {audioURL && (
         <HStack
           w="full"
@@ -312,7 +500,8 @@ const MessageInput = ({ setMessages }) => {
             colorScheme="blue"
           />
           <Text fontSize="sm" flex={1}>
-            Voice message
+            Voice {Math.floor((recordingTime || 0) / 60)}:
+            {(recordingTime || 0) % 60}
           </Text>
           <IconButton
             icon={<FaTimes />}
@@ -323,7 +512,7 @@ const MessageInput = ({ setMessages }) => {
         </HStack>
       )}
 
-      {/* File attachments preview */}
+      {/* File Preview Grid */}
       {filePreviews.length > 0 && (
         <Grid
           templateColumns="repeat(auto-fill, minmax(100px, 1fr))"
@@ -333,20 +522,18 @@ const MessageInput = ({ setMessages }) => {
           bg="gray.50"
           borderRadius="md"
         >
-          {filePreviews.map((p, i) => (
+          {filePreviews.map((p, index) => (
             <Flex
-              key={i}
-              w="full"
-              h="100px"
-              pos="relative"
-              alignItems="center"
-              justifyContent="center"
+              key={index}
               direction="column"
+              bg="white"
               borderRadius="md"
-              overflow="hidden"
+              p={2}
+              alignItems="center"
+              pos="relative"
             >
               {p.type === "image" ? (
-                <Image src={p.url} objectFit="cover" w="full" h="full" />
+                <Image src={p.url} w="100%" h="80px" objectFit="cover" borderRadius="md" />
               ) : (
                 <Box fontSize="3xl">
                   {p.type === "video" && <FaFileVideo />}
@@ -358,31 +545,35 @@ const MessageInput = ({ setMessages }) => {
                 </Box>
               )}
 
-              <Text fontSize="xs" mt={1} noOfLines={1}>
+              <Text noOfLines={1} fontSize="xs" mt={1}>
                 {p.name}
               </Text>
 
               <IconButton
+                onClick={() => removeFile(index)}
                 icon={<FaTimes />}
                 size="xs"
                 pos="absolute"
                 top={1}
                 right={1}
                 colorScheme="red"
-                onClick={() => removeFile(i)}
               />
             </Flex>
           ))}
         </Grid>
       )}
 
-      {/* Input bar */}
-      <Flex gap={2} alignItems="center" mt={2}>
+      {/* Input */}
+      <Flex gap={2} align="center" mt={2}>
         <InputGroup>
           <Input
-            placeholder="Type a message…"
+            placeholder={
+              editingMessage && editingMessage._id
+                ? "Edit message..."
+                : "Type a message..."
+            }
             value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
+            onChange={handleChangeText}
             onKeyDown={handleKeyDown}
             ref={inputRef}
           />
@@ -392,14 +583,14 @@ const MessageInput = ({ setMessages }) => {
               <input
                 type="file"
                 ref={fileInputRef}
-                style={{ display: "none" }}
                 multiple
+                style={{ display: "none" }}
                 onChange={handleFileChange}
               />
 
               <IconButton
                 icon={<FaPaperclip />}
-                onClick={() => fileInputRef.current.click()}
+                onClick={() => fileInputRef.current?.click()}
                 size="sm"
               />
 

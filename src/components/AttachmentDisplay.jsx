@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Flex,
   Box,
@@ -7,29 +7,27 @@ import {
   Image,
   Skeleton,
   useColorModeValue,
-  useToast, // useToast ကိုလည်း အပေါ်မှာပဲ ခေါ်ပါတယ် (ဒါပေမယ့် ဒီကုဒ်မှာ မသုံးထားပါ)
-  IconButton,
   Slider,
   SliderTrack,
   SliderFilledTrack,
   SliderThumb,
+  IconButton,
 } from "@chakra-ui/react";
 import { FaPlay, FaPause, FaFileDownload } from "react-icons/fa";
 import axios from "axios";
 import { useRecoilState } from "recoil";
 import { currentlyPlayingAudioIdAtom } from "../atoms/messageAtom";
 
-// ---------- API ----------
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const api = axios.create({
   baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   withCredentials: true,
 });
 
-// ---------- Small in-memory cache for signed URLs ----------
-const signedUrlCache = new Map(); // key -> { url, ts, error }
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const ERROR_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes for errors
+// cache
+const signedUrlCache = new Map();
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const ERROR_CACHE_TTL_MS = 2 * 60 * 1000;
 
 function cacheGet(key) {
   const v = signedUrlCache.get(key);
@@ -83,26 +81,30 @@ function buildCacheKey(att, params) {
   return `${pid}::${t}::${fmt}::${extra}`;
 }
 
-const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isSender }) => {
-  // ----------------------------------------------------
-  // 1. ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP LEVEL
-  // ----------------------------------------------------
-  
-  // Basic State & Refs
+const AttachmentDisplay = ({
+  attachment,
+  imgLoaded,
+  setImgLoaded,
+  messageId,
+  isSender,
+}) => {
+  // base state
   const [fileUrl, setFileUrl] = useState(null);
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [imgLoading, setImgLoading] = useState(true);
   const [imgError, setImgError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
-  // audio controls (one-at-a-time)
+  // audio
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const audioRef = useRef(null);
-  const [currentlyPlayingAudioId, setCurrentlyPlayingAudioId] = useRecoilState(currentlyPlayingAudioIdAtom);
+  const [currentlyPlayingAudioId, setCurrentlyPlayingAudioId] = useRecoilState(
+    currentlyPlayingAudioIdAtom
+  );
 
-  // CONTEXT-BASED HOOKS (Chakra UI hooks) - MUST BE UNCONDITIONAL
+  // color hooks
   const audioBubbleBgOther = useColorModeValue("gray.200", "gray.700");
   const audioIconBgOther = useColorModeValue("gray.300", "gray.600");
   const audioIconColorOther = useColorModeValue("black", "white");
@@ -111,18 +113,14 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
   const fileBg = useColorModeValue("gray.100", "gray.700");
   const imageErrorBg = useColorModeValue("gray.100", "gray.700");
   const imageErrorText = useColorModeValue("gray.500", "gray.400");
-  
-  // ✅ NEW FIX: Move the conditional hover background logic's hook to the top level
   const audioHoverBgLight = useColorModeValue("gray.400", "gray.500");
 
-
-  // ------- Stable derived values (to avoid effect ) -------
   const attType = attachment?.type;
   const attPid = attachment?.public_id || attachment?.publicId || null;
   const attFormat = attachment?.format;
   const directUrl = attachment?.url || null;
 
-  // ------- Fetch (or reuse) a signed URL only when necessary -------
+  // signed url
   useEffect(() => {
     let abort = false;
 
@@ -145,7 +143,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
       } else if (attType === "video") {
         params = { resourceType: "video", format: attFormat || "mp4" };
       } else if (attType === "file") {
-        console.log(attachment);
         params = { resourceType: "raw", format: attFormat || "bin", filename: attachment?.name };
       } else if (attType === "image" || attType === "gif") {
         params = { resourceType: "image", format: attFormat || undefined };
@@ -164,10 +161,10 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
       }
 
       try {
-        const publicId = attPid.split('/').pop();
-        // The client-side call remains the same. The server logic now handles it robustly.
-        const { data } = await api.get(`/messages/get-signed-url/${publicId}`, { params });
-        console.log(data.url);
+        const publicId = attPid.split("/").pop();
+        const { data } = await api.get(`/messages/get-signed-url/${publicId}`, {
+          params,
+        });
         if (abort) return;
 
         if (data?.previewUrl && data?.downloadUrl) {
@@ -179,7 +176,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
           setFileUrl(data.url);
           setDownloadUrl(data.url);
         } else {
-          // Cache the fact that no URL was returned
           cacheSetError(cacheKey, "No URL returned from server");
           setFileUrl(directUrl);
           setDownloadUrl(directUrl);
@@ -188,8 +184,9 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
         if (abort) return;
         console.error("Error fetching signed URL:", error);
 
-        // Cache the error to avoid repeated failed requests
-        const errorMessage = error?.response?.data?.error || error?.message || "Unknown error";
+        const errorMessage =
+          error?.response?.data?.error || error?.message || "Unknown error";
+        const cacheKey = buildCacheKey(attachment, params);
         cacheSetError(cacheKey, errorMessage);
 
         setFileUrl(directUrl);
@@ -198,12 +195,18 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
     }
 
     run();
-    return () => { abort = true; };
+    return () => {
+      abort = true;
+    };
   }, [attType, attPid, attFormat, directUrl, attachment]);
 
-  // ------- Ensure only one audio plays at a time -------
+  // only one audio at a time
   useEffect(() => {
-    if (currentlyPlayingAudioId !== messageId && audioRef.current && isPlaying) {
+    if (
+      currentlyPlayingAudioId !== messageId &&
+      audioRef.current &&
+      isPlaying
+    ) {
       audioRef.current.pause();
       setIsPlaying(false);
     }
@@ -212,7 +215,9 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
   useEffect(() => {
     return () => {
       if (audioRef.current) {
-        try { audioRef.current.pause(); } catch {}
+        try {
+          audioRef.current.pause();
+        } catch {}
       }
     };
   }, []);
@@ -234,7 +239,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
       }
     } catch (err) {
       console.error("Audio play error:", err);
-
     }
   };
 
@@ -255,9 +259,7 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
     setCurrentlyPlayingAudioId(null);
   };
 
-  // ----------------------------------------------------
-  // ----------- RENDER: Use UNCONDITIONAL HOOKS here -----------
-  // ----------------------------------------------------
+  // render by type
   switch (attType) {
     case "image":
     case "gif":
@@ -276,17 +278,18 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
               onError={() => {
                 setImgLoading(false);
                 setImgError(true);
-                // Retry loading after a delay if retry count is less than 3
                 if (retryCount < 3) {
                   setTimeout(() => {
-                    setRetryCount(prev => prev + 1);
+                    setRetryCount((prev) => prev + 1);
                     setImgError(false);
                     setImgLoading(true);
-                  }, 1000 * (retryCount + 1)); // Exponential backoff
+                  }, 1000 * (retryCount + 1));
                 }
               }}
               style={{ display: "block", cursor: fileUrl ? "pointer" : "default" }}
-              onClick={() => fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")}
+              onClick={() =>
+                fileUrl && window.open(fileUrl, "_blank", "noopener,noreferrer")
+              }
             />
           ) : imgError && retryCount >= 3 ? (
             <Flex
@@ -336,21 +339,16 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
       );
 
     case "audio": {
-      const canUse = duration && isFinite(duration);
-      // Determine colors using the values calculated from unconditional hooks
       const bubbleBg = isSender ? "blue.500" : audioBubbleBgOther;
-      
       const iconBg = isSender ? "white" : audioIconBgOther;
       const iconColor = isSender ? "blue.500" : audioIconColorOther;
-      
-      const sliderColor = isSender ? "white" : audioIconColorOther; // Reusing iconColorOther for slider filled track
       const sliderTrackColor = isSender ? "whiteAlpha.500" : audioSliderTrackColorOther;
-      
+      const sliderColor = isSender ? "white" : audioIconColorOther;
       const timeColor = isSender ? "whiteAlpha.800" : audioTimeColorOther;
+      const audioHoverBg = isSender ? "white" : audioHoverBgLight;
 
-      // 💥 FIX: Calculate the _hover background using the unconditional hook value
-      const audioHoverBg = isSender ? "white" : audioHoverBgLight; 
-      
+      const canUse = duration && isFinite(duration);
+
       return (
         <Flex
           mt={1}
@@ -371,8 +369,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
                 bg={iconBg}
                 color={iconColor}
                 _hover={{
-                  // ❌ Old Code: bg: useColorModeValue(isSender ? "white" : "gray.400", isSender ? "white" : "gray.500"),
-                  // ✅ Fixed Code: Use the pre-calculated value
                   bg: audioHoverBg,
                 }}
                 onClick={handlePlayPause}
@@ -398,7 +394,6 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
                 {formatTime((duration || 0) - (currentTime || 0))}
               </Text>
 
-              {/* hidden audio element */}
               <audio
                 ref={audioRef}
                 src={fileUrl}
@@ -435,14 +430,18 @@ const AttachmentDisplay = ({ attachment, imgLoaded, setImgLoaded, messageId, isS
             cursor={fileUrl ? "pointer" : "default"}
             color="blue.500"
             textDecoration="underline"
-            onClick={() => downloadUrl && window.open(downloadUrl, "_blank", "noopener,noreferrer")}
+            onClick={() =>
+              downloadUrl && window.open(downloadUrl, "_blank", "noopener,noreferrer")
+            }
           >
             {attachment?.name || "Download"}
           </Text>
           <Button
             size="xs"
             ml={2}
-            onClick={() => downloadUrl && window.open(downloadUrl, "_blank", "noopener,noreferrer")}
+            onClick={() =>
+              downloadUrl && window.open(downloadUrl, "_blank", "noopener,noreferrer")
+            }
             isDisabled={!downloadUrl}
             leftIcon={<FaFileDownload />}
           >
