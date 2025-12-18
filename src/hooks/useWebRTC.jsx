@@ -2,7 +2,7 @@ import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import axios from "axios";
 import { useRef } from "react";
 
-const ZEGO_APP_ID = 281042663;
+const ZEGO_APP_ID = 1459447910;
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const api = axios.create({
