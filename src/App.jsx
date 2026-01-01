@@ -37,28 +37,23 @@ function App() {
   const [loading, setLoading] = useState(true);
   const { pathname } = useLocation();
 
-  useEffect(() => {
-    const checkUserSession = async () => {
-      try {
-        const response = await api.post("/auth/refresh-token");
-        
-        if (response.status === 200 && response.data.token) {
-          const userResponse = await api.get("/auth/me");
-          if (userResponse.status === 200 && userResponse.data.user) {
-            setUser(userResponse.data.user);
-          } else {
-            setUser(null);
-          }
-        }
-      } catch (error) {
-        console.error("No active session found.", error);
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkUserSession();
-  }, [setUser]);
+ useEffect(() => {
+  const checkUserSession = async () => {
+    try {
+      await api.post("/auth/refresh-token");
+
+      const userResponse = await api.get("/auth/me");
+      setUser(userResponse.data.user);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  checkUserSession();
+}, []);
+
 
   if (loading) {
     return (

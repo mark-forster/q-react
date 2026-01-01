@@ -50,15 +50,19 @@ const GlobalHeader = () => {
     <Flex
       h="60px"
       w="100%"
-      bg={useColorModeValue("#F3F2F1", "gray.800")}
-      borderBottom="1px solid #ddd"
+      bg={useColorModeValue("#F3F2F1", "#1f2d3d")}
+borderBottom="1px solid"
+borderColor={useColorModeValue("gray.200", "gray.700")}
       align="center"
       px={5}
       justify="space-between"
     >
       {/* LEFT SIDE (Logo) */}
-      <Box fontSize="lg" fontWeight="bold" color="gray.700">
-        Arakkha Chat
+<Box
+  fontSize="lg"
+  fontWeight="bold"
+  color={useColorModeValue("gray.700", "whiteAlpha.900")}
+>        Arakkha Chat
       </Box>
 
       {/* RIGHT SIDE BUTTONS */}

@@ -12,6 +12,7 @@ import {
   SkeletonCircle,
   IconButton,
   useDisclosure,
+  useColorModeValue,
 } from "@chakra-ui/react";
 
 import React, { useState, useEffect } from "react";
@@ -34,7 +35,7 @@ import userAtom from "./atoms/userAtom";
 import { useSocket } from "./context/SocketContext";
 
 import GroupCreateModal from "./components/GroupCreateModal";
-import GroupProfileModal from "./components/GroupProfileModal";
+import GroupProfileSidebar from "./components/GroupProfileSidebar";
 import LeftAppSidebar from "./components/LeftAppSidebar";
 import UserProfileSidebar from "./components/UserProfileSidebar";
 
@@ -46,6 +47,34 @@ const api = axios.create({
   withCredentials: true,
 });
 
+const updateConversationOnNewMessage = (prev, msg, myId, selectedConversation) => {
+  const cid = String(msg.conversationId);
+  let updated = null;
+  const rest = [];
+
+  for (const c of prev) {
+    if (String(c._id) === cid) {
+      const isFromMe = String(msg.sender) === myId;
+      const isActive =
+        selectedConversation && String(selectedConversation._id) === cid;
+
+      updated = {
+        ...c,
+        unreadCount:
+          !isFromMe && !isActive
+            ? (c.unreadCount || 0) + 1
+            : (c.unreadCount || 0),
+      };
+    } else {
+      rest.push(c);
+    }
+  }
+
+  return updated ? [updated, ...rest] : prev;
+};
+
+
+
 const ChatPage = () => {
   const [loadingConversation, setLoadingConversation] = useState(true);
   const [filterType, setFilterType] = useState("all");
@@ -53,9 +82,8 @@ const ChatPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchedUsers, setSearchedUsers] = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
-useEffect(() => {
+  useEffect(() => {
     setSelectedConversation(null);
-    setMessages([]);
   }, []);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
   const [selectedConversation, setSelectedConversation] = useRecoilState(
@@ -93,6 +121,8 @@ useEffect(() => {
     switch (filterType) {
       case "groups":
         return list.filter((c) => c.isGroup);
+      case "personal":
+        return list.filter((c)=>c.isGroup !==true);
       case "unread":
         return list.filter((c) => Number(c.unreadCount || 0) > 0);
       default:
@@ -107,43 +137,67 @@ useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (msg) => {
+      const myId = String(currentUser._id);
       const cid = String(msg.conversationId);
 
-      // If user is viewing that conversation -> append
+     setConversations((prev) =>
+  updateConversationOnNewMessage(
+    prev,
+    msg,
+    myId,
+    selectedConversation
+  )
+);
+
+      if (String(msg.sender) === myId) {
+        return;
+      }
+
       if (selectedConversation && String(selectedConversation._id) === cid) {
         setMessages((prev) => {
-          if (prev.some((m) => m._id === msg._id)) return prev; // prevent duplicates
+          if (prev.some((m) => m._id === msg._id)) return prev;
           return [...prev, msg];
         });
       }
-
-      // Refresh conversation list automatically
-      api.get("/messages/conversations").then((res) => {
-        let updated = res.data.conversations || [];
-
-        // Sort by last updated time
-        updated.sort((a, b) => {
-          const t1 = new Date(a.lastMessage?.updatedAt || 0);
-          const t2 = new Date(b.lastMessage?.updatedAt || 0);
-          return t2 - t1;
-        });
-
-        setConversations(updated);
-      });
     };
+const handleConversationUpdated = (preview) => {
+  if (!preview?._id) return;
 
-    // ⭐ FIX HERE: remove mock conversation when real conversationCreated is received
+  setConversations((prev) => {
+    const updated = prev.map((c) =>
+      String(c._id) === String(preview._id)
+        ? {
+            ...c,
+            lastMessage: preview.lastMessage ?? c.lastMessage,
+            updatedAt: preview.updatedAt ?? c.updatedAt,
+          }
+        : c
+    );
+
+    const target = updated.find(
+      (c) => String(c._id) === String(preview._id)
+    );
+    const rest = updated.filter(
+      (c) => String(c._id) !== String(preview._id)
+    );
+
+    return target ? [target, ...rest] : prev;
+  });
+};
+
+
+    //
     const handleConversationCreated = (newConv) => {
       if (!newConv) return;
 
       setConversations((prev) => {
-        // အကယ်၍ အပြီးသတ် real conversation လာပြီးသားဆိုရင် ထပ်မထည့်
+        //
         const exists = prev.some((c) => c._id === newConv._id);
         if (exists) return prev;
 
         let updated = [...prev];
 
-        // ✅ DM ဖြစ်ရင် အဟောင်း mock chat ကို ဖယ်ထုတ်မယ်
+        //
         if (!newConv.isGroup && currentUser?._id) {
           const myId = String(currentUser._id);
           const friend = (newConv.participants || []).find(
@@ -163,12 +217,12 @@ useEffect(() => {
           }
         }
 
-        // Real conversation ကို သန့်သန့် အပေါ်ဆုံး ထည့်
+        //
         return [newConv, ...updated];
       });
     };
 
-    // ⭐️ NEW: Telegram-style restore when other side sends message
+    //
     const handleConversationRestored = (conv) => {
       if (!conv || !conv._id) return;
 
@@ -183,11 +237,13 @@ useEffect(() => {
 
     socket.on("newMessage", handleNewMessage);
     socket.on("conversationCreated", handleConversationCreated);
+    socket.on("conversationUpdated", handleConversationUpdated)
     socket.on("conversationRestored", handleConversationRestored);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("conversationCreated", handleConversationCreated);
+      socket.off("conversationUpdated", handleConversationUpdated)
       socket.off("conversationRestored", handleConversationRestored);
     };
   }, [
@@ -195,7 +251,7 @@ useEffect(() => {
     selectedConversation,
     setMessages,
     setConversations,
-    currentUser?._id, // ⭐ current user id ကို dep ထဲထည့်ထား။
+    currentUser?._id, //
   ]);
 
   // -------------------------------------------------------------------
@@ -232,7 +288,6 @@ useEffect(() => {
   // -------------------------------------------------------------------
   const handleSelectConversation = (conv) => {
     setSelectedConversation(conv);
-    setMessages([]);
 
     setIsUserSidebarOpen(false);
     setUserProfileSidebarData(null);
@@ -281,9 +336,7 @@ useEffect(() => {
   const handleUserClick = (user) => {
     const exists = conversations.find(
       (c) =>
-        !c.isGroup &&
-        c.participants?.some((p) => p._id === user._id) &&
-        !c.mock
+        !c.isGroup && c.participants?.some((p) => p._id === user._id) && !c.mock
     );
 
     if (exists) {
@@ -320,7 +373,6 @@ useEffect(() => {
         lastMessage: { text: "" },
       };
 
-      // ⭐ FIX HERE: အဟောင်း mock (ဒီ user အတွက်) ရှိရင် ဖျက်ပြီး အသစ်တစ်ခုပဲ ထားမယ်
       setConversations((prev) => {
         const filtered = prev.filter(
           (c) => !(c.mock && c.participants?.[0]?._id === user._id)
@@ -369,9 +421,7 @@ useEffect(() => {
     try {
       await api.delete(`/messages/conversation/${conversationId}`);
 
-      setConversations((prev) =>
-        prev.filter((c) => c._id !== conversationId)
-      );
+      setConversations((prev) => prev.filter((c) => c._id !== conversationId));
 
       if (selectedConversation?._id === conversationId) {
         setSelectedConversation(null);
@@ -391,10 +441,8 @@ useEffect(() => {
   };
 
   // -------------------------------------------------------------------
-  // OPEN USER PROFILE (Telegram-style Sidebar)
   // -------------------------------------------------------------------
   const handleOpenUserProfile = (user) => {
-    if (!user) return;
     setUserProfileSidebarData(user);
     setIsUserSidebarOpen(true);
   };
@@ -412,8 +460,9 @@ useEffect(() => {
         {/* LEFT SIDEBAR */}
         <Flex
           w="72px"
-          bg="#F3F2F1"
-          borderRight="1px solid #ddd"
+          bg={useColorModeValue("#F3F2F1", "#102a43")}
+          borderRight="1px solid"
+          borderColor={useColorModeValue("gray.200", "gray.700")}
           justify="center"
           py={4}
         >
@@ -425,9 +474,11 @@ useEffect(() => {
           flex={30}
           direction="column"
           p={4}
-          borderRight="1px solid #e5e5e5"
           overflow="hidden"
           gap={3}
+          bg={useColorModeValue("white", "#162b3a")}
+          borderRight="1px solid"
+          borderColor={useColorModeValue("gray.200", "gray.700")}
         >
           {filterType === "groups" && (
             <Button size="sm" colorScheme="purple" onClick={openGroupCreate}>
@@ -504,8 +555,17 @@ useEffect(() => {
             borderRight={isUserSidebarOpen ? "1px solid #e5e5e5" : "none"}
           >
             {!selectedConversation?._id ? (
-              <Flex flex={1} align="center" justify="center">
-                <Text color="gray.500" fontSize="lg">
+              <Flex
+                flex={1}
+                align="center"
+                justify="center"
+                bg={useColorModeValue("gray.50", "#0b1f2a")}
+              >
+                <Text
+                  color={useColorModeValue("gray.500", "gray.400")}
+                  fontSize="lg"
+                >
+                  {" "}
                   Select a conversation to start chatting
                 </Text>
               </Flex>
@@ -519,15 +579,22 @@ useEffect(() => {
           </Flex>
 
           {/* Telegram-style User Info Sidebar */}
-          {isUserSidebarOpen && userProfileSidebarData && (
-            <UserProfileSidebar
-              user={userProfileSidebarData}
-              onClose={handleCloseUserProfile}
-              isOnline={onlineUsers.includes(
-                String(userProfileSidebarData._id)
-              )}
-            />
-          )}
+          {isUserSidebarOpen &&
+            userProfileSidebarData &&
+            (userProfileSidebarData?.isGroup ? (
+              <GroupProfileSidebar
+                group={userProfileSidebarData}
+                onClose={handleCloseUserProfile}
+              />
+            ) : (
+              <UserProfileSidebar
+                user={userProfileSidebarData}
+                onClose={handleCloseUserProfile}
+                isOnline={onlineUsers.includes(
+                  String(userProfileSidebarData._id)
+                )}
+              />
+            ))}
         </Flex>
       </Flex>
 
@@ -536,16 +603,6 @@ useEffect(() => {
         onClose={closeGroupCreate}
         onCreated={handleGroupCreated}
       />
-
-      {selectedConversation?.isGroup && (
-        <GroupProfileModal
-          isOpen={isGroupProfileOpen}
-          onClose={closeGroupProfile}
-          group={conversations.find(
-            (c) => c._id === selectedConversation._id
-          )}
-        />
-      )}
     </Box>
   );
 };

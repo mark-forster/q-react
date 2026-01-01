@@ -1,8 +1,16 @@
-// LeftAppSidebar.jsx — UI same, logic uses unreadCount
-
 import React, { useState } from "react";
-import { Flex, Tooltip, IconButton, Badge } from "@chakra-ui/react";
-import { FiMessageSquare, FiUsers, FiBell } from "react-icons/fi";
+import {
+  Flex,
+  Tooltip,
+  IconButton,
+  Badge,
+  useColorModeValue,
+  Text,
+} from "@chakra-ui/react";
+import { BsBellFill } from "react-icons/bs";
+import { FaUser, FaUserFriends } from "react-icons/fa";
+import { FaMessage } from "react-icons/fa6";
+
 import { useRecoilValue } from "recoil";
 import { conversationsAtom } from "../atoms/messageAtom";
 import userAtom from "../atoms/userAtom";
@@ -15,8 +23,8 @@ const LeftAppSidebar = ({ onChangeFilter }) => {
 
   const allCount = conversations.length;
   const groupCount = conversations.filter((c) => c.isGroup).length;
+  const personalCount = conversations.filter((c) => !c.isGroup).length;
 
-  // unreadCount သာမန်အသုံးပြု
   const unreadCount = conversations.filter(
     (c) => Number(c.unreadCount || 0) > 0
   ).length;
@@ -25,21 +33,28 @@ const LeftAppSidebar = ({ onChangeFilter }) => {
     {
       id: "all",
       label: "All Chats",
-      icon: <FiMessageSquare size={22} />,
+      icon: <FaMessage size={22} />,
       count: allCount,
+      color: "gray",
+    },
+    {
+      id: "personal",
+      label: "Personal",
+      icon: <FaUser size={22} />,
+      count: personalCount,
       color: "gray",
     },
     {
       id: "groups",
       label: "Groups",
-      icon: <FiUsers size={22} />,
+      icon: <FaUserFriends size={22} />,
       count: groupCount,
-      color: "purple",
+      color: "gray",
     },
     {
       id: "unread",
       label: "Unread",
-      icon: <FiBell size={22} />,
+      icon: <BsBellFill size={22} />,
       count: unreadCount,
       color: "red",
     },
@@ -65,22 +80,34 @@ const LeftAppSidebar = ({ onChangeFilter }) => {
               aria-label={item.label}
               size="lg"
               variant="ghost"
-              color={filterType === item.id ? "brand.500" : "gray.300"}
-              _hover={{ color: "brand.400", bg: "gray.700" }}
-              bg={filterType === item.id ? "gray.800" : "transparent"}
+              color={useColorModeValue(
+                filterType === item.id ? "blue.600" : "gray.500",
+                filterType === item.id ? "blue.300" : "gray.400"
+              )}
+              _hover={{
+                bg: useColorModeValue("gray.200", "gray.700"),
+              }}
+              bg={
+                filterType === item.id
+                  ? useColorModeValue("gray.300", "#243b53")
+                  : "transparent"
+              }
               onClick={() => handleClick(item.id)}
               borderRadius="md"
-              p={2}
+              p={1}
             />
-            {item.count > 0 && (
-              <Badge
-                mt={1}
+            {item.count >= 0 && (
+              <Text
                 fontSize="10px"
-                colorScheme={item.color}
+                color={useColorModeValue(
+                  filterType === item.id ? "blue.600" : "gray.500",
+                  filterType === item.id ? "blue.300" : "gray.400"
+                )}
+                fontWeight={filterType === item.id ? "bold" : "normal"}
                 borderRadius="md"
               >
                 {item.label}
-              </Badge>
+              </Text>
             )}
           </Flex>
         </Tooltip>

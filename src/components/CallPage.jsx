@@ -24,6 +24,7 @@ const CallPage = () => {
   const userName = params.get("name");
   const callType = params.get("type");
   const acceptedFlag = params.get("accepted") === "true";
+const rejoinFlag = params.get("rejoin") === "true";
 
   const {
     startUIKitCall,
@@ -37,11 +38,17 @@ const CallPage = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
+  // ⭐ NEW STATES
+  const [callStarted, setCallStarted] = useState(false);
+  const [participants, setParticipants] = useState([]);
+
   const ringRef = useRef(null);
   const joinCalledRef = useRef(false);
   const endedRef = useRef(false);
 
-  // ====== PLAY OUTGOING RING ======
+  /* =========================
+     OUTGOING RING
+  ========================= */
   const startRing = () => {
     ringRef.current = new Audio(outgoingTone);
     ringRef.current.loop = true;
@@ -54,17 +61,17 @@ const CallPage = () => {
     ringRef.current.currentTime = 0;
   };
 
-  // ====== JOIN ROOM ======
+  /* =========================
+     JOIN ZEGO ROOM
+  ========================= */
   const joinRoomNow = () => {
-    if (joinCalledRef.current) return;
+    if (joinCalledRef.current || hasJoined) return;
     joinCalledRef.current = true;
-
-    if (hasJoined) return;
 
     stopRing();
     setHasJoined(true);
 
-   startUIKitCall({
+    startUIKitCall({
       roomID,
       userID,
       userName,
@@ -78,7 +85,9 @@ const CallPage = () => {
     });
   };
 
-  // ====== HANDLE END / CLOSE ======
+  /* =========================
+     END / CLOSE
+  ========================= */
   const handleInternalEnd = () => {
     if (endedRef.current) return;
     endedRef.current = true;
@@ -86,7 +95,6 @@ const CallPage = () => {
     cleanupZegoCall();
     stopRing();
 
-    // notify parent window
     if (window.opener) {
       window.opener.postMessage({ type: "call-ended-self" }, "*");
     }
@@ -98,20 +106,17 @@ const CallPage = () => {
     if (!socket) return;
 
     stopRing();
-
-    // notify backend
-    socket.emit("cancelCall", {
-      to: params.get("receiver"),
-      roomID,
-    });
-
+    socket.emit("cancelCall", { roomID });
     handleInternalEnd();
   };
 
-  // ====== WINDOW CLOSE EVENT ======
+  /* =========================
+     WINDOW CLOSE
+  ========================= */
   useEffect(() => {
     const beforeUnload = () => handleInternalEnd();
     window.addEventListener("beforeunload", beforeUnload);
+
     return () => {
       window.removeEventListener("beforeunload", beforeUnload);
       cleanupZegoCall();
@@ -119,28 +124,75 @@ const CallPage = () => {
     };
   }, []);
 
-  // ====== RINGING OR JOIN ======
-  useEffect(() => {
-    if (acceptedFlag) {
-      joinRoomNow();
-    } else {
-      startRing();
-    }
-  }, [acceptedFlag]);
+  /* =========================
+     INITIAL RING / AUTO JOIN
+  ========================= */
+ useEffect(() => {
+  if (acceptedFlag || rejoinFlag) {
+    // ✅ accept OR rejoin → join immediately
+    joinRoomNow();
+  } else {
+    // ❌ only brand-new outgoing call rings
+    startRing();
+  }
+}, [acceptedFlag, rejoinFlag]);
 
-  // ====== MESSAGE FROM PARENT: CALL ACCEPTED ======
+
+  /* =========================
+     MESSAGE FROM PARENT WINDOW
+  ========================= */
   useEffect(() => {
     const handler = (event) => {
       if (event.data?.type === "call-accepted") joinRoomNow();
       if (event.data?.type === "force-end-call") handleInternalEnd();
     };
+
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  /* =========================
+     ⭐ SOCKET CALL EVENTS (IMPORTANT)
+  ========================= */
+  useEffect(() => {
+    if (!socket) return;
+
+    // 🔥 B (or anyone) accepted → A must join + UI change
+    const onCallStarted = ({ roomID: rid }) => {
+      if (String(rid) !== String(roomID)) return;
+      setCallStarted(true);
+      joinRoomNow();
+    };
+
+    // 👥 Group participant joined (Messenger-style)
+    const onParticipantJoined = ({ roomID: rid, userId }) => {
+      if (String(rid) !== String(roomID)) return;
+      setParticipants((prev) =>
+        prev.includes(String(userId)) ? prev : [...prev, String(userId)]
+      );
+    };
+socket.on("callRejoined", ({ roomID: rid }) => {
+  if (String(rid) === String(roomID)) {
+    joinRoomNow();
+  }
+});
+    socket.on("callStarted", onCallStarted);
+    socket.on("groupCallParticipantJoined", onParticipantJoined);
+
+    return () => {
+      socket.off("callStarted", onCallStarted);
+      socket.off("groupCallParticipantJoined", onParticipantJoined);
+        socket.off("callRejoined");
+
+    };
+  }, [socket, roomID]);
+
+  /* =========================
+     UI
+  ========================= */
   return (
     <Flex w="100vw" h="100vh" bg="gray.900" color="white">
-      {/* Zego call UI container */}
+      {/* Zego UI */}
       <Box
         id="zego-call-container"
         w="100%"
@@ -150,7 +202,7 @@ const CallPage = () => {
         }}
       />
 
-      {/* BEFORE JOINING (RINGING) */}
+      {/* RINGING / CONNECTING */}
       {!hasJoined && (
         <Flex
           position="absolute"
@@ -164,7 +216,7 @@ const CallPage = () => {
           <Avatar size="2xl" name={userName} />
           <Heading mt={4}>{userName}</Heading>
 
-          {acceptedFlag ? (
+          {(acceptedFlag || callStarted) ? (
             <Text mt={2} color="green.300">
               Connecting…
             </Text>

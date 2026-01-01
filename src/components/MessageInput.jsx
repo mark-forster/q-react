@@ -309,6 +309,29 @@ const MessageInput = ({ setMessages }) => {
     emitTyping();
   };
 
+  // ==============================
+// RECORDING STATUS EMIT
+// ==============================
+const emitRecording = () => {
+  if (!socket || !selectedConversation?._id) return;
+
+  socket.emit("recording", {
+    conversationId: selectedConversation._id,
+    userId: user._id,
+  });
+};
+
+const emitStopRecording = () => {
+  if (!socket || !selectedConversation?._id) return;
+
+  socket.emit("stopRecording", {
+    conversationId: selectedConversation._id,
+    userId: user._id,
+  });
+};
+
+
+
   // ===================================================
   // SEND MESSAGE (B2 + EDIT MERGE)
   // ===================================================
@@ -342,7 +365,12 @@ const MessageInput = ({ setMessages }) => {
     const tempId = "tmp_" + Date.now();
     const tempMessage = {
       _id: tempId,
-      sender: user._id,
+      sender: {
+    _id: user._id,          
+    name: user.name,
+    username: user.username,
+    profilePic: user.profilePic,
+  },
       text: trimmed,
       attachments: [],
       conversationId: selectedConversation._id,
@@ -363,17 +391,13 @@ const MessageInput = ({ setMessages }) => {
       ];
     }
 
-    // 👉 show preview bubble immediately
     setMessages((prev) => [...prev, tempMessage]);
 
-    // 👉 clear input like Telegram
     setMessageText("");
     setSelectedFiles([]);
     setFilePreviews([]);
     handleRemoveAudio();
     if (fileInputRef.current) fileInputRef.current.value = null;
-
-    // stop typing once sent
     emitStopTyping();
 
     // Form data
@@ -406,30 +430,6 @@ const MessageInput = ({ setMessages }) => {
       setMessages((prev) =>
         prev.map((m) => (m._id === tempId ? real : m))
       );
-
-      // Promote mock to real conversation
-      if (selectedConversation.mock) {
-        const list = (await api.get("/messages/conversations")).data.conversations;
-        const found = list.find((c) =>
-          c.participants.some((p) => p._id === selectedConversation.userId)
-        );
-
-        if (found) {
-          const friend = found.participants.find(
-            (p) => p._id === selectedConversation.userId
-          );
-
-          setSelectedConversation({
-            _id: found._id,
-            isGroup: false,
-            mock: false,
-            userId: friend._id,
-            username: friend.username,
-            name: friend.name,
-            userProfilePic: friend.profilePic,
-          });
-        }
-      }
     } catch {
       toast.error("Failed to send.");
       setMessages((prev) =>
@@ -447,16 +447,15 @@ const MessageInput = ({ setMessages }) => {
   // ===================================================
   // Audio Controls
   // ===================================================
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      setSelectedFiles([]);
-      setFilePreviews([]);
-      handleRemoveAudio();
-      startRecording();
-    }
-  };
+const toggleRecording = () => {
+  if (isRecording) {
+    stopRecording();
+    emitStopRecording(); 
+  } else {
+    emitRecording();
+    startRecording();
+  }
+};
 
   const togglePlayPause = () => {
     const p = audioPlayerRef.current;

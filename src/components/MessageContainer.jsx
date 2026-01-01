@@ -56,6 +56,8 @@ const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
+const [activeGroupCall, setActiveGroupCall] = useState(null);
+const [activeCallType, setActiveCallType] = useState("audio");
 
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
 
@@ -72,11 +74,33 @@ const MessageContainer = () => {
 
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [typingUsers, setTypingUsers] = useState([]);
+  const [recordingUsers, setRecordingUsers] = useState([]);
 
   // ----- CALL -----
   const [incomingCallData, setIncomingCallData] = useState(null);
   const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
   const [activeCallWindow, setActiveCallWindow] = useState(null);
+
+
+const handleRejoinCall = () => {
+  if (!activeGroupCall) return;
+
+  const roomID = activeGroupCall;
+  const type = activeCallType; 
+
+  socket.emit("rejoinCall", { roomID });
+
+  const win = window.open(
+    `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}&rejoin=true`,
+    "_blank",
+    "width=800,height=600"
+  );
+
+  setActiveCallWindow(win);
+};
+
+
+
 
   // =====================================================
   //  RINGTONE
@@ -149,18 +173,32 @@ const MessageContainer = () => {
   useEffect(() => {
     if (!socket) return;
 
-    /* ---------- NEW MESSAGE ---------- */
-    const handleNewMessage = (msg) => {
-      if (!msg?._id) return;
-      if (String(msg.conversationId) !== String(selectedConversation?._id)) return;
 
-      setMessages((prev) => {
-        if (prev.some((m) => m._id === msg._id)) return prev;
-        return [...prev, msg].sort(
-          (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-        );
-      });
-    };
+    socket.on("callStarted", ({ roomID }) => {
+  setActiveGroupCall(roomID);
+});
+
+socket.on("roomEnded", ({ roomID }) => {
+  if (activeGroupCall === roomID) {
+    setActiveGroupCall(null);
+  }
+});
+
+
+    /* ---------- NEW MESSAGE ---------- */
+   const handleNewMessage = (msg) => {
+  const cid = String(msg.conversationId);
+  const myId = String(currentUser._id);
+
+  if (selectedConversation && String(selectedConversation._id) === cid) {
+    setMessages((prev) => {
+      if (prev.some((m) => m._id === msg._id)) return prev;
+      return [...prev, msg];
+    });
+  }
+
+};
+
 
     /* ---------- SEEN ---------- */
     const handleMessagesSeen = ({ conversationId, userId }) => {
@@ -196,7 +234,28 @@ const MessageContainer = () => {
 
       setTypingUsers((prev) => prev.filter((id) => id !== String(userId)));
     };
+// ==============================
+// RECORDING STATUS HANDLERS
+// ==============================
+const handleRecording = ({ conversationId, userId }) => {
+  if (
+    String(conversationId) !== String(selectedConversation?._id) ||
+    String(userId) === String(currentUser._id)
+  )
+    return;
 
+  setRecordingUsers((prev) =>
+    prev.includes(userId) ? prev : [...prev, userId]
+  );
+};
+
+const handleStopRecording = ({ conversationId, userId }) => {
+  if (String(conversationId) !== String(selectedConversation?._id)) return;
+
+  setRecordingUsers((prev) =>
+    prev.filter((id) => id !== userId)
+  );
+};
     // =====================================================
     // REAL-TIME MESSAGE EDIT EVENT
     // =====================================================
@@ -268,6 +327,8 @@ const MessageContainer = () => {
     socket.on("messagesSeen", handleMessagesSeen);
     socket.on("typing", handleTyping);
     socket.on("stopTyping", handleStopTyping);
+    socket.on("recording", handleRecording);
+    socket.on("stopRecording", handleStopRecording);
     socket.on("messageUpdated", handleMessageUpdated);
 
     socket.on("incomingCall", handleIncomingCall);
@@ -286,6 +347,8 @@ const MessageContainer = () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messagesSeen", handleMessagesSeen);
       socket.off("typing", handleTyping);
+      socket.off("recording", handleRecording);
+      socket.off("stopRecording", handleStopRecording);
       socket.off("stopTyping", handleStopTyping);
       socket.off("messageUpdated", handleMessageUpdated);
 
@@ -323,7 +386,7 @@ const MessageContainer = () => {
     const key = `${cid}-${uid}`;
 
     const hasUnseen = messages.some(
-      (m) => String(m.sender) !== uid && !m.seenBy?.includes(uid)
+      (m) => String(m.sender?._id) !== uid && !m.seenBy?.includes(uid)
     );
 
     if (!hasUnseen || seenRequestRef.current[key]) return;
@@ -340,11 +403,11 @@ const MessageContainer = () => {
   const handleAnswerIncomingCall = () => {
     const d = incomingCallData;
     if (!d) return;
-
+ setActiveCallType(d.callType);
     stopIncomingTone();
     setIsIncomingCallModalOpen(false);
 
-    socket.emit("answerCall", { to: d.from, roomID: d.roomID });
+socket.emit("answerCall", { roomID: d.roomID });
 
     const win = window.open(
       `/call/${d.roomID}?type=${d.callType}&user=${currentUser._id}&name=${currentUser.username}&accepted=true`,
@@ -367,14 +430,12 @@ const MessageContainer = () => {
   };
 
   const handleStartCall = (type) => {
-  // Group call ဖြစ်လား၊ single call ဖြစ်လား ခွဲမယ်
+    setActiveCallType(type);
   if (selectedConversation?.isGroup) {
-    // ⭐ Group Call
     const conversationId = selectedConversation._id;
-    const roomID = conversationId; // group call room ကို convId နဲ့ချည်းသတ်မယ်
-
+    const roomID = conversationId; 
     socket.emit("callUser", {
-      conversationId,             // ⭐ ဒီကိန်းနဲ့ backend က group members အကုန်ယူမယ်
+      conversationId,
       from: currentUser._id,
       name: currentUser.username,
       roomID,
@@ -388,7 +449,6 @@ const MessageContainer = () => {
     );
     setActiveCallWindow(win);
   } else {
-    // ⭐ Single Call (အခုရှိပြီးသား logic)
     if (!selectedConversation?.userId) return;
     const receiver = selectedConversation.userId;
     const roomID = [currentUser._id, receiver].sort().join("_");
@@ -427,12 +487,13 @@ const MessageContainer = () => {
     selectedConversation?.userProfilePic ||
     "";
 
-  // Status text under name (Telegram-style)
-  const statusText = typingUsers.length
-    ? "Typing..."
-    : isOnline
-    ? "Online"
-    : "Offline";
+const statusText = recordingUsers.length
+  ? "Recording voice message..."
+  : typingUsers.length
+  ? "Typing..."
+  : isOnline
+  ? "Online"
+  : "Offline";
 
   const showGreenBadge = isOnline && selectedConversation?.userId;
 
@@ -443,8 +504,14 @@ const MessageContainer = () => {
       <Flex h={12} align="center">
         {profilePic ? (
           <Avatar src={profilePic} w={9} h={9}>
-            {showGreenBadge && <AvatarBadge bg="green.500" />}
-          </Avatar>
+  {isOnline && !selectedConversation?.isGroup && (
+    <AvatarBadge
+      boxSize="1rem"
+      bg="green.400"
+    />
+  )}
+</Avatar>
+
         ) : (
           <Flex
             w="36px"
@@ -460,12 +527,38 @@ const MessageContainer = () => {
           </Flex>
         )}
 
-        <Flex ml={2} direction="column">
-          <Text fontWeight="bold">{title}</Text>
-          <Text fontSize="xs" color="gray.500">
-            {statusText}
-          </Text>
-        </Flex>
+      <Flex ml={2} direction="column">
+  <Text fontWeight="bold">{title}</Text>
+
+  {/* STATUS TEXT (Telegram style) */}
+  {recordingUsers.length ? (
+    <Text fontSize="xs" color="blue.500" fontStyle="italic">
+      Recording voice message...
+    </Text>
+  ) : typingUsers.length ? (
+    <Text fontSize="xs" color="blue.500">
+      Typing...
+    </Text>
+  ) : (
+    <Text
+  fontSize="xs"
+  color={isOnline ? "green.400" : "gray.500"}
+>
+  {isOnline ? "Online" : "Offline"}
+</Text>
+  )}
+</Flex>
+{selectedConversation?.isGroup &&
+ activeGroupCall === selectedConversation._id && (
+  <Button
+    size="sm"
+    colorScheme="green"
+    onClick={handleRejoinCall}
+  >
+    Return to call
+  </Button>
+)}
+
 
         <Flex ml="auto" gap={2}>
             <>
@@ -527,7 +620,7 @@ const MessageContainer = () => {
               <Message
                 key={m._id}
                 message={m}
-                ownMessage={String(m.sender) === String(currentUser._id)}
+                ownMessage={String(m.sender?._id) === String(currentUser._id)}
               />
             ))
           )

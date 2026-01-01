@@ -155,65 +155,78 @@ const Message = ({ ownMessage, message }) => {
   const otherText = useColorModeValue("black", "white");
   const timeColor = useColorModeValue("gray.500", "gray.400");
 
-  const hasText = Boolean((message?.text || "").trim());
-  const hasAttachments = Array.isArray(message?.attachments) && message.attachments.length > 0;
+
+const isCallMessage =
+  message?.messageType === "call" || Boolean(message?.callInfo);
+
+const hasText =
+  !isCallMessage && Boolean((message?.text || "").trim());
+    const hasAttachments = Array.isArray(message?.attachments) && message.attachments.length > 0;
   const replyTo = message?.replyTo;
-
-  const isCallMessage = message?.messageType === "call" || Boolean(message?.callInfo);
-
   // Render call message bubble
   const renderCallMessage = () => {
     if (!message?.callInfo) return null;
 
     const info = message.callInfo;
 
-    const isOutgoing = message.sender === user._id;
-    const icon = info.callType === "audio" ? "📞" : "📹";
+const isOutgoing =
+  String(message.sender?._id || message.sender) ===
+  String(user._id);    const icon = info.callType === "audio" ? "📞" : "📹";
     const callWord = info.callType === "audio" ? "call" : "video call";
     const direction = isOutgoing ? "Outgoing" : "Incoming";
 
-    let label = `${direction} ${callWord}`;
+let label = "Incoming Call";
 
-    switch (info.status) {
-      case "completed": {
-        const sec = info.duration || 0;
-        const min = Math.floor(sec / 60);
-        const rem = sec % 60;
-        const dur = min > 0 ? `${min}m ${rem}s` : `${rem || 0}s`;
-        label = `${label} (${dur})`;
-        break;
-      }
-      case "missed":
-        label = `Missed ${callWord}`;
-        break;
-      case "declined":
-        label = `${direction} ${callWord} declined`;
-        break;
-      case "canceled":
-        label = `${direction} ${callWord} canceled`;
-        break;
-      case "timeout":
-        label = `Call timeout`;
-        break;
-      default:
-        break;
-    }
+   if (info.status === "missed" || info.status === "timeout") {
+  label = "Missed Call";
+} else if (info.status === "declined") {
+  label = "Declined Call";
+} else if (info.status === "canceled") {
+  label = "Canceled Call";
+} else if (isOutgoing) {
+  label = "Outgoing Call";
+}
 
     return (
-      <Flex
-        bg={ownMessage ? ownMessageBg : otherBg}
-        color={ownMessage ? "white" : otherText}
-        px={3}
-        py={2}
-        borderRadius="md"
-        maxW="70vw"
-        alignItems="center"
-        gap={2}
-      >
-        <Text fontSize="lg">{icon}</Text>
-        <Text fontSize="sm" fontWeight="500">{label}</Text>
+  <Flex
+    bg={ownMessage ? ownMessageBg : otherBg}
+    color="white"
+    px={4}
+    py={3}
+    borderRadius="2xl"
+    minW="220px"
+    maxW="320px"
+    justify="space-between"
+    align="center"
+  >
+    {/* LEFT SIDE */}
+    <Flex direction="column" gap={1}>
+      <Text fontSize="md" fontWeight="600">
+        {label}
+      </Text>
+
+      <Flex align="center" gap={1}>
+        <Text
+          fontSize="sm"
+          color={isOutgoing ? "green.400" : "red.400"}
+        >
+          {isOutgoing ? "↗" : "↙"}
+        </Text>
+
+        <Text fontSize="sm" color="gray.400">
+          {moment(message.createdAt).format("h:mm A")}
+          {info.status === "completed" && info.duration
+            ? `, ${info.duration} seconds`
+            : ""}
+        </Text>
       </Flex>
-    );
+    </Flex>
+
+    {/* RIGHT ICON */}
+    <Text fontSize="xl">📞</Text>
+  </Flex>
+);
+
   };
 
   if (!hasText && !hasAttachments && !isCallMessage) return null;
@@ -394,15 +407,14 @@ const Message = ({ ownMessage, message }) => {
                 {moment(message.updatedAt || message.createdAt).format("h:mm A")}
               </Text>
 
-              {message.updatedAt !== message.createdAt && (
+              {/* {message.updatedAt !== message.createdAt && (
                 <Text fontSize="10px" color="gray.400">edited</Text>
-              )}
+              )} */}
 
               <BsCheckAll size={16} color="cyan" />
             </Flex>
           </Bubble>
 
-          {/* ⭐ Sender Avatar Fallback */}
           {user?.profilePic?.url ? (
             <Avatar src={user.profilePic.url} w={8} h={8} />
           ) : (
@@ -425,7 +437,7 @@ const Message = ({ ownMessage, message }) => {
         /*      RECEIVER SIDE       */
         /* ======================== */
         <Flex gap={2} alignSelf="flex-start" alignItems="flex-end">
-          {/* ⭐ Receiver Avatar Fallback */}
+          {/*  Receiver Avatar Fallback */}
           {message?.sender?.profilePic?.url ? (
             <Avatar
               src={message.sender.profilePic.url}
@@ -471,12 +483,12 @@ const Message = ({ ownMessage, message }) => {
             {isCallMessage && renderCallMessage()}
 
             {hasText && (
-              <Flex bg={otherBg} p={2} borderRadius="md" maxW="70vw">
-                <Text whiteSpace="pre-wrap" color={otherText}>
-                  {message.text}
-                </Text>
-              </Flex>
-            )}
+  <Flex bg={ownMessageBg} p={2} borderRadius="md" maxW="70vw">
+    <Text color={ownMessage ? "white" : otherText}>
+      {message.text}
+    </Text>
+  </Flex>
+)}
 
             {hasAttachments &&
               message.attachments.map((att, idx) => (

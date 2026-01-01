@@ -72,9 +72,9 @@ const Conversation = ({
   const callInfo = lastMessage?.callInfo;
 
   const unread = Number(merged.unreadCount || 0);
+const selectedBg = useColorModeValue("gray.200", "#243b53");
+const hoverBg = useColorModeValue("gray.100", "#334e68");
 
-  const selectedBg = useColorModeValue("gray.200", "gray.700");
-  const hoverBg = useColorModeValue("gray.100", "gray.600");
 
   // Click conversation
   const onClick = () => {
@@ -193,7 +193,7 @@ const Conversation = ({
 
   const isSelected = selectedConversation?._id === merged._id;
 
-  return (
+   return (
    <Flex
   gap={4}
   alignItems="center"
@@ -299,16 +299,20 @@ const Conversation = ({
             >
               {/* VIEW */}
               <MenuItem
-                onClick={() => {
-                  if (isGroup) {
-                    onOpenGroupProfile && onOpenGroupProfile(merged);
-                  } else {
-                    onOpenUserProfile && onOpenUserProfile(friend);
-                  }
-                }}
-              >
-                {isGroup ? "View Group" : "View User"}
-              </MenuItem>
+  onClick={() => {
+    if (isGroup) {
+      onOpenUserProfile &&
+        onOpenUserProfile({
+          ...merged,
+          isGroup: true, 
+        });
+    } else {
+      onOpenUserProfile && onOpenUserProfile(friend);
+    }
+  }}
+>
+  {isGroup ? "View Group" : "View User"}
+</MenuItem>
 
               {/* DELETE */}
               <MenuItem
