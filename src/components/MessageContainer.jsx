@@ -80,13 +80,22 @@ const [activeCallType, setActiveCallType] = useState("audio");
   const [incomingCallData, setIncomingCallData] = useState(null);
   const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
   const [activeCallWindow, setActiveCallWindow] = useState(null);
+const [isInCall, setIsInCall] = useState(false);
 
 
 const handleRejoinCall = () => {
+  // ⭐ already in call + window ရှိနေတယ်ဆိုရင်
+  // → rejoin မလုပ်ဘဲ existing call ကို focus
+  if (isInCall && activeCallWindow && !activeCallWindow.closed) {
+    activeCallWindow.focus();
+    return;
+  }
+
+  // ⭐ call မရှိရင် မလုပ်
   if (!activeGroupCall) return;
 
   const roomID = activeGroupCall;
-  const type = activeCallType; 
+  const type = activeCallType;
 
   socket.emit("rejoinCall", { roomID });
 
@@ -98,6 +107,7 @@ const handleRejoinCall = () => {
 
   setActiveCallWindow(win);
 };
+
 
 
 
@@ -176,13 +186,19 @@ const handleRejoinCall = () => {
 
     socket.on("callStarted", ({ roomID }) => {
   setActiveGroupCall(roomID);
+  setIsInCall(true);
 });
 
-socket.on("roomEnded", ({ roomID }) => {
-  if (activeGroupCall === roomID) {
+socket.on("roomEnded", ({ roomID, conversationId }) => {
+  if (
+    activeGroupCall === roomID &&
+    String(selectedConversation?._id) === String(conversationId)
+  ) {
     setActiveGroupCall(null);
+    setActiveCallType("audio");
   }
 });
+
 
 
     /* ---------- NEW MESSAGE ---------- */
@@ -555,7 +571,7 @@ const statusText = recordingUsers.length
     colorScheme="green"
     onClick={handleRejoinCall}
   >
-    Return to call
+    Join
   </Button>
 )}
 
