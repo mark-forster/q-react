@@ -13,10 +13,17 @@ import {
   IconButton,
   useDisclosure,
   useColorModeValue,
+   Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from "@chakra-ui/react";
 
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
+import useIncomingCall from "./hooks/useIncomingCall"; // ✅ NEW
 
 import MessageContainer from "./components/MessageContainer";
 import ConversationList from "./components/ConversationList";
@@ -96,6 +103,12 @@ const ChatPage = () => {
   const [deletingId, setDeletingId] = useState(null);
   const { socket, onlineUsers } = useSocket();
   const [sendingPreview, setSendingPreview] = useState(null);
+ const {
+    incomingCallData,
+    isIncomingCallOpen,
+    answerCall,
+    rejectCall,
+  } = useIncomingCall(socket);
 
   // 🔹 User Info Sidebar state
   const [userProfileSidebarData, setUserProfileSidebarData] = useState(null);
@@ -235,6 +248,41 @@ const handleConversationUpdated = (preview) => {
       toast.success("New chat restored");
     };
 
+socket.on("callStarted", ({ roomID, callType }) => {
+  setConversations((prev) =>
+    prev.map((c) => {
+      if (
+        String(c._id) === String(roomID) &&
+        c.isGroup === true        // ⭐ အရေးကြီးဆုံး
+      ) {
+        return {
+          ...c,
+          hasActiveCall: true,
+          activeCallType: callType || "audio",
+        };
+      }
+      return c;
+    })
+  );
+});
+
+
+socket.on("roomEnded", ({ roomID }) => {
+  setConversations((prev) =>
+    prev.map((c) =>
+      String(c._id) === String(roomID) && c.isGroup
+        ? {
+            ...c,
+            hasActiveCall: false,
+            activeCallType: null,
+          }
+        : c
+    )
+  );
+});
+
+
+
     socket.on("newMessage", handleNewMessage);
     socket.on("conversationCreated", handleConversationCreated);
     socket.on("conversationUpdated", handleConversationUpdated)
@@ -245,6 +293,8 @@ const handleConversationUpdated = (preview) => {
       socket.off("conversationCreated", handleConversationCreated);
       socket.off("conversationUpdated", handleConversationUpdated)
       socket.off("conversationRestored", handleConversationRestored);
+      socket.off("callStarted");
+    socket.off("roomEnded");
     };
   }, [
     socket,
@@ -603,6 +653,33 @@ const handleConversationUpdated = (preview) => {
         onClose={closeGroupCreate}
         onCreated={handleGroupCreated}
       />
+      {/* 🔔 INCOMING CALL MODAL (GLOBAL) */}
+      {incomingCallData && (
+        <Modal isOpen={isIncomingCallOpen} isCentered>
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              {incomingCallData.callType.toUpperCase()} Call
+            </ModalHeader>
+            <ModalBody>
+              <Text>
+                <b>{incomingCallData.name}</b> is calling…
+              </Text>
+            </ModalBody>
+            <ModalFooter gap={3}>
+              <Button colorScheme="red" onClick={rejectCall}>
+                Reject
+              </Button>
+              <Button
+                colorScheme="green"
+                onClick={() => answerCall({ currentUser })}
+              >
+                Answer
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
     </Box>
   );
 };

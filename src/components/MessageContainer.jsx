@@ -56,7 +56,7 @@ const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
-const [activeGroupCall, setActiveGroupCall] = useState(null);
+// const [activeGroupCall, setActiveGroupCall] = useState(null);
 const [activeCallType, setActiveCallType] = useState("audio");
 
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
@@ -81,32 +81,25 @@ const [activeCallType, setActiveCallType] = useState("audio");
   const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
   const [activeCallWindow, setActiveCallWindow] = useState(null);
 const [isInCall, setIsInCall] = useState(false);
-
+const freshConversation = conversations.find(
+  (c) => String(c._id) === String(selectedConversation?._id)
+);
 
 const handleRejoinCall = () => {
-  // ⭐ already in call + window ရှိနေတယ်ဆိုရင်
-  // → rejoin မလုပ်ဘဲ existing call ကို focus
-  if (isInCall && activeCallWindow && !activeCallWindow.closed) {
-    activeCallWindow.focus();
-    return;
-  }
+  if (!freshConversation?.hasActiveCall) return;
 
-  // ⭐ call မရှိရင် မလုပ်
-  if (!activeGroupCall) return;
-
-  const roomID = activeGroupCall;
-  const type = activeCallType;
+  const roomID = freshConversation._id;
+  const type = freshConversation.activeCallType || "audio";
 
   socket.emit("rejoinCall", { roomID });
 
-  const win = window.open(
+  window.open(
     `/call/${roomID}?type=${type}&user=${currentUser._id}&name=${currentUser.username}&rejoin=true`,
     "_blank",
     "width=800,height=600"
   );
-
-  setActiveCallWindow(win);
 };
+
 
 
 
@@ -115,24 +108,24 @@ const handleRejoinCall = () => {
   // =====================================================
   //  RINGTONE
   // =====================================================
-  useEffect(() => {
-    incomingToneRef.current = new Audio(incomingRingtone);
-    incomingToneRef.current.loop = true;
-    return () => incomingToneRef.current?.pause();
-  }, []);
+  // useEffect(() => {
+  //   incomingToneRef.current = new Audio(incomingRingtone);
+  //   incomingToneRef.current.loop = true;
+  //   return () => incomingToneRef.current?.pause();
+  // }, []);
 
-  const startIncomingTone = () => {
-    try {
-      incomingToneRef.current?.play();
-    } catch {}
-  };
+  // const startIncomingTone = () => {
+  //   try {
+  //     incomingToneRef.current?.play();
+  //   } catch {}
+  // };
 
-  const stopIncomingTone = () => {
-    try {
-      incomingToneRef.current?.pause();
-      incomingToneRef.current.currentTime = 0;
-    } catch {}
-  };
+  // const stopIncomingTone = () => {
+  //   try {
+  //     incomingToneRef.current?.pause();
+  //     incomingToneRef.current.currentTime = 0;
+  //   } catch {}
+  // };
 
   // =====================================================
   // LOAD MESSAGES (Telegram-safe)
@@ -184,20 +177,20 @@ const handleRejoinCall = () => {
     if (!socket) return;
 
 
-    socket.on("callStarted", ({ roomID }) => {
-  setActiveGroupCall(roomID);
-  setIsInCall(true);
-});
+//     socket.on("callStarted", ({ roomID }) => {
+//   setActiveGroupCall(roomID);
+//   setIsInCall(true);
+// });
 
-socket.on("roomEnded", ({ roomID, conversationId }) => {
-  if (
-    activeGroupCall === roomID &&
-    String(selectedConversation?._id) === String(conversationId)
-  ) {
-    setActiveGroupCall(null);
-    setActiveCallType("audio");
-  }
-});
+// socket.on("roomEnded", ({ roomID, conversationId }) => {
+//   if (
+//     activeGroupCall === roomID &&
+//     String(selectedConversation?._id) === String(conversationId)
+//   ) {
+//     setActiveGroupCall(null);
+//     setActiveCallType("audio");
+//   }
+// });
 
 
 
@@ -304,17 +297,17 @@ const handleStopRecording = ({ conversationId, userId }) => {
     };
 
     /* ---------- CALL EVENTS ---------- */
-    const handleIncomingCall = ({ from, name, callType, roomID }) => {
-      if (activeCallWindow && !activeCallWindow.closed) {
-        socket.emit("callRejected", { to: from, roomID });
-        return;
-      }
+    // const handleIncomingCall = ({ from, name, callType, roomID }) => {
+    //   if (activeCallWindow && !activeCallWindow.closed) {
+    //     socket.emit("callRejected", { to: from, roomID });
+    //     return;
+    //   }
 
-      setIncomingCallData({ from, name, callType, roomID });
-      setIsIncomingCallModalOpen(true);
-      callEndedShownRef.current = false;
-      startIncomingTone();
-    };
+    //   setIncomingCallData({ from, name, callType, roomID });
+    //   setIsIncomingCallModalOpen(true);
+    //   callEndedShownRef.current = false;
+    //   startIncomingTone();
+    // };
 
     const handleCallAccepted = ({ roomID }) => {
       if (activeCallWindow && !activeCallWindow.closed) {
@@ -347,7 +340,7 @@ const handleStopRecording = ({ conversationId, userId }) => {
     socket.on("stopRecording", handleStopRecording);
     socket.on("messageUpdated", handleMessageUpdated);
 
-    socket.on("incomingCall", handleIncomingCall);
+    // socket.on("incomingCall", handleIncomingCall);
     socket.on("callAccepted", handleCallAccepted);
     socket.on("callEnded", () => endCall("Call ended", "info"));
     socket.on("callRejected", () => endCall("Call rejected", "error"));
@@ -368,7 +361,7 @@ const handleStopRecording = ({ conversationId, userId }) => {
       socket.off("stopTyping", handleStopTyping);
       socket.off("messageUpdated", handleMessageUpdated);
 
-      socket.off("incomingCall", handleIncomingCall);
+      // socket.off("incomingCall", handleIncomingCall);
       socket.off("callAccepted", handleCallAccepted);
       socket.off("callEnded");
       socket.off("callRejected");
@@ -564,8 +557,8 @@ const statusText = recordingUsers.length
 </Text>
   )}
 </Flex>
-{selectedConversation?.isGroup &&
- activeGroupCall === selectedConversation._id && (
+{freshConversation?.isGroup &&
+ freshConversation?.hasActiveCall && (
   <Button
     size="sm"
     colorScheme="green"
@@ -574,6 +567,8 @@ const statusText = recordingUsers.length
     Join
   </Button>
 )}
+
+
 
 
         <Flex ml="auto" gap={2}>
@@ -647,7 +642,7 @@ const statusText = recordingUsers.length
       <MessageInput setMessages={setMessages} />
 
       {/* INCOMING CALL MODAL */}
-      {incomingCallData && (
+      {/* {incomingCallData && (
         <Modal isOpen={isIncomingCallModalOpen} isCentered>
           <ModalOverlay />
           <ModalContent>
@@ -671,7 +666,7 @@ const statusText = recordingUsers.length
             </ModalFooter>
           </ModalContent>
         </Modal>
-      )}
+      )} */}
     </Flex>
   );
 };
