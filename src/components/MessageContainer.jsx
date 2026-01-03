@@ -1,5 +1,3 @@
-// MessageContainer.jsx — FINAL (Telegram-Safe + Full Phone/Video Call + Avatar Fallback + REALTIME EDIT + TYPING)
-
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flex,
@@ -56,7 +54,6 @@ const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
-// const [activeGroupCall, setActiveGroupCall] = useState(null);
 const [activeCallType, setActiveCallType] = useState("audio");
 
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
@@ -99,33 +96,6 @@ const handleRejoinCall = () => {
     "width=800,height=600"
   );
 };
-
-
-
-
-
-
-  // =====================================================
-  //  RINGTONE
-  // =====================================================
-  // useEffect(() => {
-  //   incomingToneRef.current = new Audio(incomingRingtone);
-  //   incomingToneRef.current.loop = true;
-  //   return () => incomingToneRef.current?.pause();
-  // }, []);
-
-  // const startIncomingTone = () => {
-  //   try {
-  //     incomingToneRef.current?.play();
-  //   } catch {}
-  // };
-
-  // const stopIncomingTone = () => {
-  //   try {
-  //     incomingToneRef.current?.pause();
-  //     incomingToneRef.current.currentTime = 0;
-  //   } catch {}
-  // };
 
   // =====================================================
   // LOAD MESSAGES (Telegram-safe)
@@ -175,23 +145,6 @@ const handleRejoinCall = () => {
   // =====================================================
   useEffect(() => {
     if (!socket) return;
-
-
-//     socket.on("callStarted", ({ roomID }) => {
-//   setActiveGroupCall(roomID);
-//   setIsInCall(true);
-// });
-
-// socket.on("roomEnded", ({ roomID, conversationId }) => {
-//   if (
-//     activeGroupCall === roomID &&
-//     String(selectedConversation?._id) === String(conversationId)
-//   ) {
-//     setActiveGroupCall(null);
-//     setActiveCallType("audio");
-//   }
-// });
-
 
 
     /* ---------- NEW MESSAGE ---------- */
@@ -296,18 +249,6 @@ const handleStopRecording = ({ conversationId, userId }) => {
       );
     };
 
-    /* ---------- CALL EVENTS ---------- */
-    // const handleIncomingCall = ({ from, name, callType, roomID }) => {
-    //   if (activeCallWindow && !activeCallWindow.closed) {
-    //     socket.emit("callRejected", { to: from, roomID });
-    //     return;
-    //   }
-
-    //   setIncomingCallData({ from, name, callType, roomID });
-    //   setIsIncomingCallModalOpen(true);
-    //   callEndedShownRef.current = false;
-    //   startIncomingTone();
-    // };
 
     const handleCallAccepted = ({ roomID }) => {
       if (activeCallWindow && !activeCallWindow.closed) {
@@ -339,8 +280,6 @@ const handleStopRecording = ({ conversationId, userId }) => {
     socket.on("recording", handleRecording);
     socket.on("stopRecording", handleStopRecording);
     socket.on("messageUpdated", handleMessageUpdated);
-
-    // socket.on("incomingCall", handleIncomingCall);
     socket.on("callAccepted", handleCallAccepted);
     socket.on("callEnded", () => endCall("Call ended", "info"));
     socket.on("callRejected", () => endCall("Call rejected", "error"));
@@ -360,8 +299,6 @@ const handleStopRecording = ({ conversationId, userId }) => {
       socket.off("stopRecording", handleStopRecording);
       socket.off("stopTyping", handleStopTyping);
       socket.off("messageUpdated", handleMessageUpdated);
-
-      // socket.off("incomingCall", handleIncomingCall);
       socket.off("callAccepted", handleCallAccepted);
       socket.off("callEnded");
       socket.off("callRejected");
@@ -640,33 +577,6 @@ const statusText = recordingUsers.length
       </Flex>
 
       <MessageInput setMessages={setMessages} />
-
-      {/* INCOMING CALL MODAL */}
-      {/* {incomingCallData && (
-        <Modal isOpen={isIncomingCallModalOpen} isCentered>
-          <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>
-              {incomingCallData.callType.toUpperCase()} Call
-            </ModalHeader>
-
-            <ModalBody>
-              <Text>
-                <b>{incomingCallData.name}</b> is calling…
-              </Text>
-            </ModalBody>
-
-            <ModalFooter gap={3}>
-              <Button colorScheme="red" onClick={handleRejectIncomingCall}>
-                Reject
-              </Button>
-              <Button colorScheme="green" onClick={handleAnswerIncomingCall}>
-                Answer
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-      )} */}
     </Flex>
   );
 };
