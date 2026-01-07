@@ -78,16 +78,10 @@ export default function useWebRTC(socket) {
         turnOnMicrophoneWhenJoining: true,
 
         onLeaveRoom: () => {
-          endCallCallback?.();
-
-          const receiver = roomID
-            .split("_")
-            .find((id) => String(id) !== String(userID));
-
-          if (receiver && socket) {
-            socket.emit("endCall", { to: receiver, roomID });
-          }
-        },
+  endCallCallback?.();
+  socket.emit("endCall", { roomID });
+}
+,
 
         onNetworkQualityStatus: (q) => {
           if (q.level <= 2) setNetworkQuality("poor");

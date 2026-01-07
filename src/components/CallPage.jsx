@@ -45,6 +45,28 @@ const rejoinFlag = params.get("rejoin") === "true";
   const ringRef = useRef(null);
   const joinCalledRef = useRef(false);
   const endedRef = useRef(false);
+useEffect(() => {
+  if (!socket) return;
+
+  const guardEnd = ({ roomID: rid }) => {
+    if (String(rid) !== String(roomID)) return;
+    handleInternalEnd();
+  };
+
+  socket.on("callCanceled", guardEnd);
+  socket.on("callRejected", guardEnd);
+  socket.on("callEnded", guardEnd);
+  socket.on("callTimeout", guardEnd);
+  socket.on("roomEnded", guardEnd);
+
+  return () => {
+    socket.off("callCanceled", guardEnd);
+    socket.off("callRejected", guardEnd);
+    socket.off("callEnded", guardEnd);
+    socket.off("callTimeout", guardEnd);
+    socket.off("roomEnded", guardEnd);
+  };
+}, [socket, roomID]);
 
   /* =========================
      OUTGOING RING

@@ -8,6 +8,31 @@ export default function useIncomingCall(socket) {
 
   const ringtoneRef = useRef(null);
   const activeCallWindowRef = useRef(null);
+useEffect(() => {
+  if (!socket) return;
+
+  const closeIncomingModal = ({ roomID }) => {
+    if (!incomingCallData) return;
+
+    if (incomingCallData.roomID !== roomID) return;
+
+    stopRing();
+    setIncomingCallData(null);
+    setIsIncomingCallOpen(false);
+  };
+
+  socket.on("callCanceled", closeIncomingModal);
+  socket.on("callRejected", closeIncomingModal);
+  socket.on("callEnded", closeIncomingModal);
+  socket.on("callTimeout", closeIncomingModal);
+
+  return () => {
+    socket.off("callCanceled", closeIncomingModal);
+    socket.off("callRejected", closeIncomingModal);
+    socket.off("callEnded", closeIncomingModal);
+    socket.off("callTimeout", closeIncomingModal);
+  };
+}, [socket, incomingCallData]);
 
   // ringtone init
   useEffect(() => {

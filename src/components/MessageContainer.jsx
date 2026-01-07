@@ -78,6 +78,15 @@ const [activeCallType, setActiveCallType] = useState("audio");
   const [isIncomingCallModalOpen, setIsIncomingCallModalOpen] = useState(false);
   const [activeCallWindow, setActiveCallWindow] = useState(null);
 const [isInCall, setIsInCall] = useState(false);
+
+const stopIncomingTone = () => {
+  try {
+    incomingToneRef.current?.pause();
+    incomingToneRef.current.currentTime = 0;
+  } catch {}
+};
+
+
 const freshConversation = conversations.find(
   (c) => String(c._id) === String(selectedConversation?._id)
 );
