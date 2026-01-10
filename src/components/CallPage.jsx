@@ -54,19 +54,40 @@ useEffect(() => {
   };
 
   socket.on("callCanceled", guardEnd);
-  socket.on("callRejected", guardEnd);
   socket.on("callEnded", guardEnd);
   socket.on("callTimeout", guardEnd);
   socket.on("roomEnded", guardEnd);
+  socket.on("callRejected", guardEnd);
+    
+    // Safety check: if backend emits group event for single call or mixed up
+    socket.on("groupCallParticipantLeft", ({ roomID: rid, userId }) => {
+       if (String(rid) !== String(roomID)) return;
+       // If we are calling a specific user and they left, end it.
+       if (userID && String(userId) === String(userID)) {
+          handleInternalEnd();
+       }
+    });
 
-  return () => {
-    socket.off("callCanceled", guardEnd);
-    socket.off("callRejected", guardEnd);
-    socket.off("callEnded", guardEnd);
-    socket.off("callTimeout", guardEnd);
-    socket.off("roomEnded", guardEnd);
-  };
-}, [socket, roomID]);
+    // Check status on connect (Handle Race Condition)
+    socket.emit("checkCallStatus", { roomID }, (response) => {
+      if (
+        response.status === "ended" ||
+        response.status === "declined" ||
+        response.status === "canceled"
+      ) {
+        handleInternalEnd();
+      }
+    });
+
+    return () => {
+      socket.off("callCanceled", guardEnd);
+      socket.off("callEnded", guardEnd);
+      socket.off("callTimeout", guardEnd);
+      socket.off("roomEnded", guardEnd);
+      socket.off("callRejected", guardEnd);
+      socket.off("groupCallParticipantLeft");
+    };
+  }, [socket, roomID]);
 
   /* =========================
      OUTGOING RING

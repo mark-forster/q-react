@@ -125,6 +125,18 @@ const ReactionBar = ({ onReact, alignRight }) => (
 );
 
 const Message = ({ ownMessage, message }) => {
+  // ===============================
+  // SYSTEM MESSAGE (Messenger style)
+  // ===============================
+  if (message.messageType === "system") {
+    return (
+      <Flex justify="center" my={2}>
+        <Text fontSize="sm" color="gray.500">
+          {message.text}
+        </Text>
+      </Flex>
+    );
+  }
   const selectedConversation = useRecoilValue(selectedConversationAtom);
   const user = useRecoilValue(userAtom);
   const conversations = useRecoilValue(conversationsAtom);
@@ -157,7 +169,11 @@ const Message = ({ ownMessage, message }) => {
 
 
 const isCallMessage =
-  message?.messageType === "call" || Boolean(message?.callInfo);
+  message?.messageType === "call" &&
+  ["completed", "missed", "timeout", "canceled", "declined"].includes(
+    message?.callInfo?.status
+  );
+
 
 const hasText =
   !isCallMessage && Boolean((message?.text || "").trim());
@@ -179,10 +195,10 @@ let label = "Incoming Call";
 
    if (info.status === "missed" || info.status === "timeout") {
   label = "Missed Call";
-} else if (info.status === "declined") {
-  label = "Declined Call";
-} else if (info.status === "canceled") {
+} else  if (info.status === "canceled") {
   label = "Canceled Call";
+} else if (info.status === "declined") {
+    label = "Declined Call";
 } else if (isOutgoing) {
   label = "Outgoing Call";
 }
@@ -223,13 +239,22 @@ let label = "Incoming Call";
     </Flex>
 
     {/* RIGHT ICON */}
-    <Text fontSize="xl">📞</Text>
+    <Text fontSize="xl">
+  {info.callType === "audio" ? "📞" : "📹"}
+</Text>
   </Flex>
 );
 
   };
 
-  if (!hasText && !hasAttachments && !isCallMessage) return null;
+if (
+  !hasText &&
+  !hasAttachments &&
+  !isCallMessage &&
+  message.messageType !== "system"
+) {
+  return null;
+}
 
   const handleEdit = () => setEditingMessage(message);
   const handleReply = () => setEditingMessage({ replyTo: message });

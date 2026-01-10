@@ -94,14 +94,29 @@ useEffect(() => {
     setIsIncomingCallOpen(false);
   };
 
-  const rejectCall = () => {
-    if (!incomingCallData) return;
+ const rejectCall = () => {
+  if (!incomingCallData) return;
 
-    socket.emit("callRejected", { roomID: incomingCallData.roomID });
-    stopRing();
-    setIncomingCallData(null);
-    setIsIncomingCallOpen(false);
-  };
+  socket.emit("callRejected", { roomID: incomingCallData.roomID });
+
+  // 🔥 FORCE CLOSE CALL WINDOW (CALLER SIDE)
+  if (
+    activeCallWindowRef.current &&
+    !activeCallWindowRef.current.closed
+  ) {
+    activeCallWindowRef.current.postMessage(
+      { type: "force-end-call" },
+      "*"
+    );
+    activeCallWindowRef.current.close();
+    activeCallWindowRef.current = null;
+  }
+
+  stopRing();
+  setIncomingCallData(null);
+  setIsIncomingCallOpen(false);
+};
+
 
   return {
     incomingCallData,
