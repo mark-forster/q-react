@@ -35,6 +35,7 @@ import { useDisclosure } from "@chakra-ui/react";
 import AttachmentDisplay from "./AttachmentDisplay";
 
 import { useRecoilValue, useSetRecoilState } from "recoil";
+import {  focusInputAtom } from "../atoms/messageAtom";
 import {
   selectedConversationAtom,
   editingMessageAtom,
@@ -108,7 +109,7 @@ const ReactionBar = ({ onReact, alignRight }) => (
     top="-32px"
     right={alignRight ? 0 : "auto"}
     left={alignRight ? "auto" : 0}
-    zIndex={10}
+    zIndex={2000}
   >
     {REACTIONS.map((e) => (
       <Box
@@ -123,8 +124,52 @@ const ReactionBar = ({ onReact, alignRight }) => (
     ))}
   </Flex>
 );
+// Reply Message Ui Handling
+// ===============================
+// Reply Preview Text Helper
+// ===============================
+const MAX_CHARS = 7;
+
+const getReplyPreviewText = (msg) => {
+  if (!msg) return "Attachment";
+
+  // replyTo populated မလာသေးတဲ့ realtime case
+  if (!msg.text && !msg.attachments) {
+    return "Attachment Reply";
+  }
+
+  // call message
+  if (msg.messageType === "call") {
+    return "Attachment Reply";
+  }
+
+  // attachments
+  if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
+    return "Attachment";
+  }
+
+  // normal text (5 words truncate)
+  // text (CHARACTER based)
+  if (msg.text) {
+    const text = msg.text.trim();
+
+    if (text.length <= MAX_CHARS) {
+      return `Reply ${text}`;
+    }
+
+    return `Reply ${text.slice(0, MAX_CHARS)} ......`;
+  }
+
+  return "Attachment Reply";
+};
+
+
+
+
 
 const Message = ({ ownMessage, message }) => {
+const setFocusInput = useSetRecoilState(focusInputAtom);
+
   // ===============================
   // SYSTEM MESSAGE (Messenger style)
   // ===============================
@@ -174,7 +219,28 @@ const isCallMessage =
     message?.callInfo?.status
   );
 
+// ===============================
+// Forwarded Label
+// ===============================
+const renderForwardedLabel = () => {
+  if (!message?.isForwarded || !message?.forwardedFrom) return null;
 
+  const name =
+    message.forwardedFrom.name ||
+    message.forwardedFrom.username ||
+    "Unknown";
+
+  return (
+    <Text
+      fontSize="xs"
+      color="gray.400"
+      mb={1}
+      fontStyle="italic"
+    >
+      Forwarded from {name}
+    </Text>
+  );
+};
 const hasText =
   !isCallMessage && Boolean((message?.text || "").trim());
     const hasAttachments = Array.isArray(message?.attachments) && message.attachments.length > 0;
@@ -251,13 +317,14 @@ if (
   !hasText &&
   !hasAttachments &&
   !isCallMessage &&
+  !hasReactions &&
   message.messageType !== "system"
 ) {
   return null;
 }
 
   const handleEdit = () => setEditingMessage(message);
-  const handleReply = () => setEditingMessage({ replyTo: message });
+  const handleReply = () => {setEditingMessage({ replyTo: message });setFocusInput(true);}
   const handleForward = () => {
     setMessageToForward(message);
     onForwardModalOpen();
@@ -322,39 +389,41 @@ if (
     </Flex>
   );
 
-  const renderReactions = () => {
-    if (!Array.isArray(message.reactions) || message.reactions.length === 0)
-      return null;
+const renderReactions = () => {
+  if (!Array.isArray(message.reactions) || message.reactions.length === 0)
+    return null;
 
-    const count = {};
+  const grouped = {};
+  message.reactions.forEach((r) => {
+    grouped[r.emoji] = (grouped[r.emoji] || 0) + 1;
+  });
 
-    message.reactions.forEach((r) => {
-      count[r.emoji] = (count[r.emoji] || 0) + 1;
-    });
+  return (
+    <Flex
+      mt={1}
+      alignSelf={ownMessage ? "flex-end" : "flex-start"}
+      gap={1}
+      px={2}
+      py="2px"
+      bg={useColorModeValue("gray.100", "gray.700")}
+      borderRadius="full"
+      width="fit-content"
+      fontSize="13px"
+    >
+      {Object.entries(grouped).map(([emoji, count]) => (
+        <Flex key={emoji} align="center" gap="2px">
+          <Text>{emoji}</Text>
+          {count > 1 && (
+            <Text fontSize="11px" color="gray.500">
+              {count}
+            </Text>
+          )}
+        </Flex>
+      ))}
+    </Flex>
+  );
+};
 
-    return (
-      <Flex mt={1} gap={1}>
-        {Object.entries(count).map(([emoji, qty]) => (
-          <Flex
-            key={emoji}
-            bg="gray.200"
-            px={2}
-            py={1}
-            borderRadius="full"
-            fontSize="12px"
-            align="center"
-          >
-            <Text>{emoji}</Text>
-            {qty > 1 && (
-              <Text ml={1} fontSize="10px">
-                {qty}
-              </Text>
-            )}
-          </Flex>
-        ))}
-      </Flex>
-    );
-  };
 
   // ============================
   //        RENDER UI
@@ -382,26 +451,20 @@ if (
           </Popover>
 
           <Bubble align="flex-end">
+            {renderForwardedLabel()}
             {showReactions && (
               <ReactionBar onReact={handleReaction} alignRight />
             )}
 
-            {replyTo && (
-              <Box
-                bg="blackAlpha.200"
-                borderLeft="3px solid #888"
-                p={2}
-                mb={2}
-                borderRadius="md"
-              >
-                <Text fontSize="xs" fontWeight="bold">
-                  {replyTo?.sender?.name}
-                </Text>
-                <Text fontSize="xs">
-                  {replyTo?.text || "Attachment"}
-                </Text>
-              </Box>
-            )}
+{replyTo && (
+  <Box mb={1}>
+    <Text fontSize="xs" color="gray.400">
+      {getReplyPreviewText(replyTo)}
+    </Text>
+  </Box>
+)}
+
+
 
             {isCallMessage && renderCallMessage()}
 
@@ -486,29 +549,22 @@ if (
           )}
 
           <Bubble align="flex-start">
+            {renderForwardedLabel()}
             {showReactions && <ReactionBar onReact={handleReaction} />}
 
-            {replyTo && (
-              <Box
-                bg="blackAlpha.200"
-                borderLeft="3px solid #888"
-                p={2}
-                mb={2}
-                borderRadius="md"
-              >
-                <Text fontSize="xs" fontWeight="bold">
-                  {replyTo?.sender?.name}
-                </Text>
-                <Text fontSize="xs">
-                  {replyTo?.text || "Attachment"}
-                </Text>
-              </Box>
-            )}
+    {replyTo && (
+  <Box mb={1}>
+    <Text fontSize="xs" color="gray.400">
+      {getReplyPreviewText(replyTo)}
+    </Text>
+  </Box>
+)}
+
 
             {isCallMessage && renderCallMessage()}
 
             {hasText && (
-  <Flex bg={ownMessageBg} p={2} borderRadius="md" maxW="70vw">
+  <Flex bg={ownMessage ? ownMessageBg : otherBg} p={2} borderRadius="md" maxW="70vw">
     <Text color={ownMessage ? "white" : otherText}>
       {message.text}
     </Text>

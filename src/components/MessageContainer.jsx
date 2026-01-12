@@ -198,27 +198,67 @@ const handleGroupCallEnded = ({ conversationId }) => {
       setRecordingUsers((p) => p.filter((id) => id !== userId));
     };
 
-    const handleMessageUpdated = ({ messageId, newText }) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === messageId
-            ? { ...m, text: newText }
-            : m
-        )
-      );
+  const handleMessageUpdated = ({ messageId, newText, sender }) => {
+  setMessages(prev =>
+    prev.map(m =>
+      m._id === messageId
+        ? {
+            ...m,
+            text: newText,
+            sender: sender ?? m.sender, // ⭐ CRITICAL
+          }
+        : m
+    )
+  );
 
-      setConversations((prev) =>
-        prev.map((c) =>
-          c._id === selectedConversation?._id &&
-          c.lastMessage?._id === messageId
-            ? {
-                ...c,
-                lastMessage: { ...c.lastMessage, text: newText },
-              }
-            : c
-        )
-      );
-    };
+  setConversations(prev =>
+    prev.map(c =>
+      c.lastMessage?._id === messageId
+        ? {
+            ...c,
+            lastMessage: {
+              ...c.lastMessage,
+              text: newText,
+            },
+          }
+        : c
+    )
+  );
+};
+const handleReactionUpdated = ({ messageId, reactions }) => {
+    console.log("reaction socket arrived", messageId, reactions);
+  setMessages((prev) =>
+    prev.map((m) =>
+      String(m._id) === String(messageId)
+        ? { ...m, reactions }
+        : m
+    )
+  );
+};
+
+const handleMessageDeleted = ({ conversationId, messageId }) => {
+  // 1️⃣ message list ထဲက message ကို ဖယ်
+  setMessages((prev) =>
+    prev.filter((m) => String(m._id) !== String(messageId))
+  );
+
+  // 2️⃣ conversation list ထဲက lastMessage ကို sync
+  setConversations((prev) =>
+    prev.map((c) => {
+      if (String(c._id) !== String(conversationId)) return c;
+
+      // deleted message က lastMessage ဖြစ်နေရင်
+      if (String(c.lastMessage?._id) === String(messageId)) {
+        return {
+          ...c,
+          lastMessage: null, // server က conversationUpdated ပြန်ပို့ပေးမယ်
+        };
+      }
+
+      return c;
+    })
+  );
+};
 
     socket.on("newMessage", handleNewMessage);
     socket.on("messagesSeen", handleMessagesSeen);
@@ -229,6 +269,8 @@ const handleGroupCallEnded = ({ conversationId }) => {
     socket.on("messageUpdated", handleMessageUpdated);
     socket.on("groupCallActive", handleGroupCallActive);
     socket.on("groupCallEnded", handleGroupCallEnded);
+    socket.on("messageDeleted", handleMessageDeleted);
+    socket.on("messageReactionUpdated", handleReactionUpdated);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
@@ -240,6 +282,8 @@ const handleGroupCallEnded = ({ conversationId }) => {
       socket.off("messageUpdated", handleMessageUpdated);
       socket.off("groupCallActive", handleGroupCallActive);
       socket.off("groupCallEnded", handleGroupCallEnded);
+      socket.off("messageDeleted", handleMessageDeleted);
+      socket.off("messageReactionUpdated", handleReactionUpdated);
 
     };
   }, [socket, selectedConversation?._id, currentUser?._id]);

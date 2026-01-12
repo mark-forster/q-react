@@ -21,6 +21,7 @@ import { FaRegFileAlt, FaFilePdf, FaFileWord, FaFileExcel } from "react-icons/fa
 import { FaFileVideo, FaFileAudio } from "react-icons/fa6";
 import { IoIosPlayCircle } from "react-icons/io";
 import { GiPauseButton } from "react-icons/gi";
+import { focusInputAtom } from "../atoms/messageAtom";
 
 import toast from "react-hot-toast";
 import axios from "axios";
@@ -74,6 +75,7 @@ function extFromMime(mime = "") {
 const MessageInput = ({ setMessages }) => {
   const [messageText, setMessageText] = useState("");
 
+  const [focusInput, setFocusInput] = useRecoilState(focusInputAtom);
   const [selectedConversation, setSelectedConversation] =
     useRecoilState(selectedConversationAtom);
 
@@ -113,7 +115,12 @@ const MessageInput = ({ setMessages }) => {
 
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
-
+useEffect(() => {
+  if (focusInput) {
+    inputRef.current?.focus(); 
+    setFocusInput(false); 
+  }
+}, [focusInput])
   // Typing timeout (for stopTyping)
   const typingTimeoutRef = useRef(null);
 
@@ -244,13 +251,13 @@ const MessageInput = ({ setMessages }) => {
       );
 
       // Emit socket event
-      if (socket) {
-        socket.emit("messageEdited", {
-          messageId: updated._id,
-          conversationId: selectedConversation._id,
-          newText: updated.text,
-        });
-      }
+      // if (socket) {
+      //   socket.emit("messageEdited", {
+      //     messageId: updated._id,
+      //     conversationId: selectedConversation._id,
+      //     newText: updated.text,
+      //   });
+      // }
 
       toast.success("Message updated!");
       setEditingMessage(null);
@@ -404,6 +411,10 @@ const emitStopRecording = () => {
     const form = new FormData();
     if (trimmed) form.append("message", trimmed);
 
+if (editingMessage?.replyTo?._id) {
+  form.append("replyTo", editingMessage.replyTo._id);
+}
+
     if (!selectedConversation.mock)
       form.append("conversationId", selectedConversation._id);
     else
@@ -425,11 +436,37 @@ const emitStopRecording = () => {
     try {
       const res = await api.post("/messages", form);
       const real = res.data.data;
+setMessages((prev) =>
+  prev.map((m) => (m._id === tempId ? real : m))
+);
 
-      // Replace temp
-      setMessages((prev) =>
-        prev.map((m) => (m._id === tempId ? real : m))
-      );
+setConversations((prev) => {
+  const updated = prev.map((c) =>
+    String(c._id) === String(real.conversationId)
+      ? {
+          ...c,
+          lastMessage: {
+            _id: real._id,
+            text: real.text || "",
+            sender: real.sender,
+            updatedAt: real.createdAt,
+          },
+        }
+      : c
+  );
+
+  const target = updated.find(
+    (c) => String(c._id) === String(real.conversationId)
+  );
+  const rest = updated.filter(
+    (c) => String(c._id) !== String(real.conversationId)
+  );
+
+  return target ? [target, ...rest] : updated;
+});
+
+setEditingMessage(null);
+
     } catch {
       toast.error("Failed to send.");
       setMessages((prev) =>
@@ -482,6 +519,37 @@ const toggleRecording = () => {
   // ===================================================
   return (
     <>
+    {editingMessage?.replyTo && (
+  <Flex
+    bg="blackAlpha.100"
+    borderLeft="4px solid #3182ce"
+    p={2}
+    mb={2}
+    borderRadius="md"
+    justify="space-between"
+    align="center"
+  >
+    <Flex direction="column">
+      <Text fontSize="xs" fontWeight="bold" color="blue.400">
+        Replying to{" "}
+        {editingMessage.replyTo.sender?.name ||
+          editingMessage.replyTo.sender?.username}
+      </Text>
+
+      <Text fontSize="xs" noOfLines={1}>
+        {editingMessage.replyTo.text || "Attachment"}
+      </Text>
+    </Flex>
+
+    <IconButton
+      size="xs"
+      icon={<FaTimes />}
+      variant="ghost"
+      onClick={() => setEditingMessage(null)}
+    />
+  </Flex>
+)}
+
       {/* Audio Preview */}
       {audioURL && (
         <HStack

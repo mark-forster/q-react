@@ -76,10 +76,12 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, currentUser]);
 
-  const toggleUser = (id) =>
-    setSelectedUsers((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+ const toggleTarget = (id) =>
+  setSelectedUsers(prev =>
+    prev.includes(id)
+      ? prev.filter(x => x !== id)
+      : [...prev, id]
+  );
 
   const handleSend = async () => {
     try {
@@ -106,10 +108,39 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
       setIsForwarding(false); // Stop the spinner
     }
   };
+const itemsToDisplay = searchQuery.trim()
+  ? searchedUsers.map(u => ({
+      type: "user",
+      id: u._id,
+      title: u.name || u.username,
+      avatar: u.profilePic,
+    }))
+  : conversations.map(c => {
+      // ✅ GROUP
+      if (c.isGroup) {
+        return {
+          type: "group",
+          id: c._id,              // ⭐ conversationId
+          title: c.name || "Group Chat",
+          avatar: null,
+        };
+      }
 
-  const usersToDisplay = searchQuery.trim()
-    ? searchedUsers
-    : conversations.map(c => c.participants.find(p => p._id !== currentUser._id)).filter(Boolean);
+      // ✅ DM (User)
+      const friend = c.participants.find(
+        p => p._id !== currentUser._id
+      );
+
+      if (!friend) return null;
+
+      return {
+        type: "user",
+        id: friend._id,
+        title: friend.name || friend.username,
+        avatar: friend.profilePic,
+      };
+    }).filter(Boolean);
+
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
@@ -143,44 +174,62 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </InputGroup>
-          <VStack spacing={2} align="stretch" maxH="40vh" overflowY="auto">
-            {searchingUser ? (
-              [0, 1, 2].map((i) => (
-                <HStack key={i} p={2}>
-                  <SkeletonCircle size="8" />
-                  <Skeleton h="10px" w="full" />
-                </HStack>
-              ))
-            ) : usersToDisplay.length > 0 ? (
-              usersToDisplay.map((u) => (
-                <HStack
-                  key={u._id}
-                  p={2}
-                  borderRadius="md"
-                  _hover={{ bg: useColorModeValue("gray.100", "gray.700") }}
-                  cursor="pointer"
-                  onClick={() => toggleUser(u._id)}
-                  bg={
-                    selectedUsers.includes(u._id)
-                      ? useColorModeValue("blue.50", "blue.900")
-                      : "transparent"
-                  }
-                >
-                  <Checkbox
-                    isChecked={selectedUsers.includes(u._id)}
-                    onChange={() => toggleUser(u._id)}
-                    colorScheme="blue"
-                  />
-                  <Avatar src={u?.profilePic} name={u?.name} size="sm" />
-                  <Text>{u?.name || u?.username}</Text>
-                </HStack>
-              ))
-            ) : (
-              <Text textAlign="center" color="gray.500">
-                {searchQuery.trim() ? "No users found." : "No conversations found."}
-              </Text>
-            )}
-          </VStack>
+         <VStack spacing={2} align="stretch" maxH="40vh" overflowY="auto">
+  {searchingUser ? (
+    [0, 1, 2].map((i) => (
+      <HStack key={i} p={2}>
+        <SkeletonCircle size="8" />
+        <Skeleton h="10px" w="full" />
+      </HStack>
+    ))
+  ) : itemsToDisplay.length > 0 ? (
+    itemsToDisplay.map((item) => (
+      <HStack
+        key={item.id}
+        p={2}
+        borderRadius="md"
+        cursor="pointer"
+        _hover={{ bg: useColorModeValue("gray.100", "gray.700") }}
+        onClick={() => toggleTarget(item.id)}
+        bg={
+          selectedUsers.includes(item.id)
+            ? useColorModeValue("blue.50", "blue.900")
+            : "transparent"
+        }
+      >
+        <Checkbox
+          isChecked={selectedUsers.includes(item.id)}
+          onChange={() => toggleTarget(item.id)}
+        />
+
+        {/* Avatar */}
+        {item.type === "group" ? (
+          <Avatar size="sm" bg="purple.500" color="white">
+            👥
+          </Avatar>
+        ) : (
+          <Avatar src={item.avatar} name={item.title} size="sm" />
+        )}
+
+        <Box>
+          <Text fontWeight="medium">{item.title}</Text>
+          {item.type === "group" && (
+            <Text fontSize="xs" color="gray.500">
+              Group
+            </Text>
+          )}
+        </Box>
+      </HStack>
+    ))
+  ) : (
+    <Text textAlign="center" color="gray.500">
+      {searchQuery.trim()
+        ? "No users found."
+        : "No conversations found."}
+    </Text>
+  )}
+</VStack>
+
         </ModalBody>
         <ModalFooter>
           <Button

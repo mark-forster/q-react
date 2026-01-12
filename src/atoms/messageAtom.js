@@ -29,3 +29,7 @@ export const currentlyPlayingAudioIdAtom = atom({
   key: 'currentlyPlayingAudioIdAtom',
   default: null, // Default is null, meaning no audio is playing
 });
+export const focusInputAtom = atom({
+  key: "focusInputAtom",
+  default: false,
+});
