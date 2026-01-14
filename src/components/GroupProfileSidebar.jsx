@@ -1,7 +1,3 @@
-// components/GroupProfileSidebar.jsx
-// Group Profile Sidebar — Modal-style design + Edit + Photo Upload UI
-// Add Member → Modal with Search (no inline add section)
-
 import React, { useMemo, useState, useRef } from "react";
 import {
   Box,
@@ -33,7 +29,7 @@ const GroupProfileSidebar = ({ group, onClose }) => {
   const currentUser = useRecoilValue(userAtom);
 
   // =========================
-  // Add Member Modal control
+  // Add Member Modal
   // =========================
   const {
     isOpen: isAddOpen,
@@ -86,13 +82,6 @@ const GroupProfileSidebar = ({ group, onClose }) => {
     if (newName.trim()) {
       await renameGroup();
     }
-
-    // 🔜 backend ready ဖြစ်ရင် photo upload ကို ဒီမှာချိတ်
-    // const formData = new FormData();
-    // formData.append("conversationId", group._id);
-    // formData.append("name", newName);
-    // if (photoFile) formData.append("photo", photoFile);
-    // await api.put("/messages/group/update", formData);
 
     setIsEditing(false);
   };
@@ -202,44 +191,36 @@ const GroupProfileSidebar = ({ group, onClose }) => {
 
                 <Stack spacing={1} align="center" mt={3} w="100%">
                   {isEditing ? (
-                     <Box w="100%">
-    {/* Title */}
-    <Text
-      fontSize="sm"
-      fontWeight="semibold"
-      color="gray.600"
-      mb={2}
-    >
-      Change Group Name
-    </Text>
+                    <Box w="100%">
+                      {/* Title */}
+                      <Text
+                        fontSize="sm"
+                        fontWeight="semibold"
+                        color="gray.600"
+                        mb={2}
+                      >
+                        Change Group Name
+                      </Text>
 
-    {/* Card */}
-    <Box
-      bg="gray.100"
-      borderRadius="lg"
-      p={3}
-    >
-      <Text
-        fontSize="xs"
-        color="gray.500"
-        mb={1}
-      >
-        Group Name
-      </Text>
+                      {/* Card */}
+                      <Box bg="gray.100" borderRadius="lg" p={3}>
+                        <Text fontSize="xs" color="gray.500" mb={1}>
+                          Group Name
+                        </Text>
 
-      <Input
-        value={newName}
-        onChange={(e) => setNewName(e.target.value)}
-        variant="unstyled"
-        fontSize="md"
-        fontWeight="medium"
-        placeholder="Group name"
-        color="black"               
-         _focus={{ color: "black" }}
-        _placeholder={{ color: "gray.400" }}
-      />
-    </Box>
-  </Box>
+                        <Input
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          variant="unstyled"
+                          fontSize="md"
+                          fontWeight="medium"
+                          placeholder="Group name"
+                          color="black"
+                          _focus={{ color: "black" }}
+                          _placeholder={{ color: "gray.400" }}
+                        />
+                      </Box>
+                    </Box>
                   ) : (
                     <Text fontWeight="bold" fontSize="lg">
                       {title}
@@ -248,8 +229,8 @@ const GroupProfileSidebar = ({ group, onClose }) => {
 
                   {!isEditing && (
                     <Text fontSize="sm" color={labelColor}>
-                    {members?.length || 0} members
-                  </Text>
+                      {members?.length || 0} members
+                    </Text>
                   )}
                 </Stack>
               </Flex>
@@ -257,56 +238,58 @@ const GroupProfileSidebar = ({ group, onClose }) => {
               <Divider my={4} />
 
               {/* MEMBERS */}
-             {!isEditing && (
+              {!isEditing && (
                 <>
-                 <Flex justify="space-between" align="center" mb={2}>
-                <Text fontWeight="bold">Members ({members.length})</Text>
+                  <Flex justify="space-between" align="center" mb={2}>
+                    <Text fontWeight="bold">Members ({members.length})</Text>
 
-                {/* 👉 Add Member → Modal */}
-                <Button
-                  size="sm"
-                  leftIcon={<FiUserPlus />}
-                  variant="outline"
-                  onClick={openAddModal}
-                >
-                  Add
-                </Button>
-              </Flex>
-
-              <Stack spacing={2} maxH="240px" overflowY="auto">
-                {members.map((u) => (
-                  <Flex
-                    key={u._id}
-                    align="center"
-                    justify="space-between"
-                    p={2}
-                    borderRadius="md"
-                    _hover={{ bg: "gray.100" }}
-                  >
-                    <Flex align="center" gap={3}>
-                      <Avatar
-                        size="sm"
-                        src={u.profilePic?.url || u.profilePic || ""}
-                      />
-                      <Text fontSize="sm">
-                        {u._id === currentUser._id ? `${u.name} (You)` : u.name}
-                      </Text>
-                    </Flex>
-
-                    {u._id !== currentUser._id && (
-                      <IconButton
-                        icon={<FiTrash />}
-                        size="sm"
-                        colorScheme="red"
-                        variant="ghost"
-                        onClick={() => removeMember(u._id)}
-                      />
-                    )}
+                    {/*  Add Member → Modal */}
+                    <Button
+                      size="sm"
+                      leftIcon={<FiUserPlus />}
+                      variant="outline"
+                      onClick={openAddModal}
+                    >
+                      Add
+                    </Button>
                   </Flex>
-                ))}
-              </Stack>
-              </>
-             )}
+
+                  <Stack spacing={2} maxH="240px" overflowY="auto">
+                    {members.map((u) => (
+                      <Flex
+                        key={u._id}
+                        align="center"
+                        justify="space-between"
+                        p={2}
+                        borderRadius="md"
+                        _hover={{ bg: "gray.100" }}
+                      >
+                        <Flex align="center" gap={3}>
+                          <Avatar
+                            size="sm"
+                            src={u.profilePic?.url || u.profilePic || ""}
+                          />
+                          <Text fontSize="sm">
+                            {u._id === currentUser._id
+                              ? `${u.name} (You)`
+                              : u.name}
+                          </Text>
+                        </Flex>
+
+                        {u._id !== currentUser._id && (
+                          <IconButton
+                            icon={<FiTrash />}
+                            size="sm"
+                            colorScheme="red"
+                            variant="ghost"
+                            onClick={() => removeMember(u._id)}
+                          />
+                        )}
+                      </Flex>
+                    ))}
+                  </Stack>
+                </>
+              )}
             </>
           )}
         </Box>
@@ -316,7 +299,7 @@ const GroupProfileSidebar = ({ group, onClose }) => {
           <Stack spacing={2}>
             {isEditing && (
               <Button
-                colorScheme="purple"
+                bg={useColorModeValue("#23ADE3", "#3FB07B")}
                 w="100%"
                 borderRadius="full"
                 onClick={handleSaveProfile}
@@ -326,18 +309,16 @@ const GroupProfileSidebar = ({ group, onClose }) => {
               </Button>
             )}
 
-           {!isEditing &&(
-             <Button
-              colorScheme="red"
-              variant="outline"
-              w="100%"
-              onClick={leaveGroup}
-            >
-              Leave Group
-            </Button>
-           )
-
-           }
+            {!isEditing && (
+              <Button
+                colorScheme="red"
+                variant="outline"
+                w="100%"
+                onClick={leaveGroup}
+              >
+                Leave Group
+              </Button>
+            )}
           </Stack>
         </Box>
       </Box>

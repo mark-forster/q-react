@@ -89,8 +89,7 @@ const MessageContainer = () => {
         const data = Array.isArray(res.data) ? res.data : [];
         data.sort(
           (a, b) =>
-            new Date(a.createdAt).getTime() -
-            new Date(b.createdAt).getTime()
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
         setMessages(data);
       } catch (err) {
@@ -107,48 +106,45 @@ const MessageContainer = () => {
   }, [messages]);
 
   // --------------------------------------------------
-  // SOCKET EVENTS (NO CALL EVENTS HERE)
+  // SOCKET EVENTS
   // --------------------------------------------------
   useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (msg) => {
-      if (
-        String(msg.conversationId) ===
-        String(selectedConversation?._id)
-      ) {
+      if (String(msg.conversationId) === String(selectedConversation?._id)) {
         setMessages((prev) =>
           prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]
         );
       }
     };
-const handleGroupCallActive = ({ conversationId, callType }) => {
-  setConversations(prev =>
-    prev.map(c =>
-      String(c._id) === String(conversationId)
-        ? {
-            ...c,
-            hasActiveCall: true,
-            activeCallType: callType,
-          }
-        : c
-    )
-  );
-};
-const handleGroupCallEnded = ({ conversationId }) => {
-  setConversations(prev =>
-    prev.map(c =>
-      String(c._id) === String(conversationId)
-        ? {
-            ...c,
-            hasActiveCall: false,
-            activeCallType: null,
-          }
-        : c
-    )
-  );
-};
- 
+    const handleGroupCallActive = ({ conversationId, callType }) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          String(c._id) === String(conversationId)
+            ? {
+                ...c,
+                hasActiveCall: true,
+                activeCallType: callType,
+              }
+            : c
+        )
+      );
+    };
+    const handleGroupCallEnded = ({ conversationId }) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          String(c._id) === String(conversationId)
+            ? {
+                ...c,
+                hasActiveCall: false,
+                activeCallType: null,
+              }
+            : c
+        )
+      );
+    };
+
     const handleMessagesSeen = ({ conversationId, userId }) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -171,9 +167,7 @@ const handleGroupCallEnded = ({ conversationId }) => {
       )
         return;
 
-      setTypingUsers((p) =>
-        p.includes(userId) ? p : [...p, userId]
-      );
+      setTypingUsers((p) => (p.includes(userId) ? p : [...p, userId]));
     };
 
     const handleStopTyping = ({ conversationId, userId }) => {
@@ -188,9 +182,7 @@ const handleGroupCallEnded = ({ conversationId }) => {
       )
         return;
 
-      setRecordingUsers((p) =>
-        p.includes(userId) ? p : [...p, userId]
-      );
+      setRecordingUsers((p) => (p.includes(userId) ? p : [...p, userId]));
     };
 
     const handleStopRecording = ({ conversationId, userId }) => {
@@ -198,67 +190,62 @@ const handleGroupCallEnded = ({ conversationId }) => {
       setRecordingUsers((p) => p.filter((id) => id !== userId));
     };
 
-  const handleMessageUpdated = ({ messageId, newText, sender }) => {
-  setMessages(prev =>
-    prev.map(m =>
-      m._id === messageId
-        ? {
-            ...m,
-            text: newText,
-            sender: sender ?? m.sender, // ⭐ CRITICAL
+    const handleMessageUpdated = ({ messageId, newText, sender }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? {
+                ...m,
+                text: newText,
+                sender: sender ?? m.sender,
+              }
+            : m
+        )
+      );
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.lastMessage?._id === messageId
+            ? {
+                ...c,
+                lastMessage: {
+                  ...c.lastMessage,
+                  text: newText,
+                },
+              }
+            : c
+        )
+      );
+    };
+    const handleReactionUpdated = ({ messageId, reactions }) => {
+      console.log("reaction socket arrived", messageId, reactions);
+      setMessages((prev) =>
+        prev.map((m) =>
+          String(m._id) === String(messageId) ? { ...m, reactions } : m
+        )
+      );
+    };
+
+    const handleMessageDeleted = ({ conversationId, messageId }) => {
+      setMessages((prev) =>
+        prev.filter((m) => String(m._id) !== String(messageId))
+      );
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (String(c._id) !== String(conversationId)) return c;
+
+          if (String(c.lastMessage?._id) === String(messageId)) {
+            return {
+              ...c,
+              lastMessage: null,
+            };
           }
-        : m
-    )
-  );
 
-  setConversations(prev =>
-    prev.map(c =>
-      c.lastMessage?._id === messageId
-        ? {
-            ...c,
-            lastMessage: {
-              ...c.lastMessage,
-              text: newText,
-            },
-          }
-        : c
-    )
-  );
-};
-const handleReactionUpdated = ({ messageId, reactions }) => {
-    console.log("reaction socket arrived", messageId, reactions);
-  setMessages((prev) =>
-    prev.map((m) =>
-      String(m._id) === String(messageId)
-        ? { ...m, reactions }
-        : m
-    )
-  );
-};
-
-const handleMessageDeleted = ({ conversationId, messageId }) => {
-  // 1️⃣ message list ထဲက message ကို ဖယ်
-  setMessages((prev) =>
-    prev.filter((m) => String(m._id) !== String(messageId))
-  );
-
-  // 2️⃣ conversation list ထဲက lastMessage ကို sync
-  setConversations((prev) =>
-    prev.map((c) => {
-      if (String(c._id) !== String(conversationId)) return c;
-
-      // deleted message က lastMessage ဖြစ်နေရင်
-      if (String(c.lastMessage?._id) === String(messageId)) {
-        return {
-          ...c,
-          lastMessage: null, // server က conversationUpdated ပြန်ပို့ပေးမယ်
-        };
-      }
-
-      return c;
-    })
-  );
-};
+          return c;
+        })
+      );
+    };
 
     socket.on("newMessage", handleNewMessage);
     socket.on("messagesSeen", handleMessagesSeen);
@@ -284,7 +271,6 @@ const handleMessageDeleted = ({ conversationId, messageId }) => {
       socket.off("groupCallEnded", handleGroupCallEnded);
       socket.off("messageDeleted", handleMessageDeleted);
       socket.off("messageReactionUpdated", handleReactionUpdated);
-
     };
   }, [socket, selectedConversation?._id, currentUser?._id]);
 
@@ -311,7 +297,7 @@ const handleMessageDeleted = ({ conversationId, messageId }) => {
   }, [messages, selectedConversation?._id]);
 
   // --------------------------------------------------
-  // CALL ACTIONS (OUTGOING + REJOIN ONLY)
+  // CALL ACTIONS
   // --------------------------------------------------
   const handleStartCall = (type) => {
     if (!selectedConversation) return;
@@ -350,9 +336,7 @@ const handleMessageDeleted = ({ conversationId, messageId }) => {
   // UI
   // --------------------------------------------------
   const title =
-    selectedConversation?.name ||
-    selectedConversation?.username ||
-    "Chat";
+    selectedConversation?.name || selectedConversation?.username || "Chat";
 
   const isOnline = selectedConversation?.userId
     ? onlineUsers.includes(String(selectedConversation.userId))
@@ -362,95 +346,80 @@ const handleMessageDeleted = ({ conversationId, messageId }) => {
     <Flex flex={70} bg={containerBg} p={4} flexDir="column">
       {/* HEADER */}
       <Flex h={12} align="center">
-              {profilePic ? (
-                <Avatar src={profilePic} w={9} h={9}>
-        {isOnline && !selectedConversation?.isGroup && (
-          <AvatarBadge
-            boxSize="1rem"
-            bg="green.400"
-          />
-        )}
-      </Avatar>
-      
-              ) : (
-                <Flex
-                  w="36px"
-                  h="36px"
-                  borderRadius="full"
-                  align="center"
-                  justify="center"
-                  bg={getAvatarColor(title)}
-                  color="white"
-                  fontWeight="bold"
-                >
-                  {getInitials(title)}
-                </Flex>
-              )}
-      
-            <Flex ml={2} direction="column">
-        <Text fontWeight="bold">{title}</Text>
-      
-        {/* STATUS TEXT (Telegram style) */}
-        {recordingUsers.length ? (
-          <Text fontSize="xs" color="blue.500" fontStyle="italic">
-            Recording voice message...
-          </Text>
-        ) : typingUsers.length ? (
-          <Text fontSize="xs" color="blue.500">
-            Typing...
-          </Text>
+        {profilePic ? (
+          <Avatar src={profilePic} w={9} h={9}>
+            {isOnline && !selectedConversation?.isGroup && (
+              <AvatarBadge boxSize="1rem" bg="green.400" />
+            )}
+          </Avatar>
         ) : (
-          <Text
-        fontSize="xs"
-        color={isOnline ? "green.400" : "gray.500"}
-      >
-        {isOnline ? "Online" : "Offline"}
-      </Text>
+          <Flex
+            w="36px"
+            h="36px"
+            borderRadius="full"
+            align="center"
+            justify="center"
+            bg={getAvatarColor(title)}
+            color="white"
+            fontWeight="bold"
+          >
+            {getInitials(title)}
+          </Flex>
         )}
+
+        <Flex ml={2} direction="column">
+          <Text fontWeight="bold">{title}</Text>
+
+          {/* STATUS TEXT*/}
+          {recordingUsers.length ? (
+            <Text fontSize="xs" color="blue.500" fontStyle="italic">
+              Recording voice message...
+            </Text>
+          ) : typingUsers.length ? (
+            <Text fontSize="xs" color="blue.500">
+              Typing...
+            </Text>
+          ) : (
+            <Text fontSize="xs" color={isOnline ? "green.400" : "gray.500"}>
+              {isOnline ? "Online" : "Offline"}
+            </Text>
+          )}
+        </Flex>
+        {freshConversation?.isGroup && freshConversation?.hasActiveCall && (
+          <Button size="sm" colorScheme="green" onClick={handleRejoinCall}>
+            Join
+          </Button>
+        )}
+
+        <Flex ml="auto" gap={2}>
+          <>
+            <Tooltip label="Audio Call">
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<FiPhone />}
+                onClick={() => handleStartCall("audio")}
+              />
+            </Tooltip>
+
+            <Tooltip label="Video Call">
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={<FiVideo />}
+                onClick={() => handleStartCall("video")}
+              />
+            </Tooltip>
+          </>
+
+          <Menu>
+            <MenuButton as={IconButton} icon={<CiMenuKebab />} size="sm" />
+            <MenuList>
+              <MenuItem>View Profile</MenuItem>
+            </MenuList>
+          </Menu>
+        </Flex>
       </Flex>
-      {freshConversation?.isGroup &&
-       freshConversation?.hasActiveCall && (
-        <Button
-          size="sm"
-          colorScheme="green"
-          onClick={handleRejoinCall}
-        >
-          Join
-        </Button>
-      )}
-      
-      
-      
-      
-              <Flex ml="auto" gap={2}>
-                  <>
-                    <Tooltip label="Audio Call">
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        icon={<FiPhone />}
-                        onClick={() => handleStartCall("audio")}
-                      />
-                    </Tooltip>
-      
-                    <Tooltip label="Video Call">
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        icon={<FiVideo />}
-                        onClick={() => handleStartCall("video")}
-                      />
-                    </Tooltip>
-                  </>
-      
-                <Menu>
-                  <MenuButton as={IconButton} icon={<CiMenuKebab />} size="sm" />
-                  <MenuList>
-                    <MenuItem>View Profile</MenuItem>
-                  </MenuList>
-                </Menu>
-              </Flex>
-            </Flex>
 
       <Divider my={2} />
 
@@ -473,9 +442,7 @@ const handleMessageDeleted = ({ conversationId, messageId }) => {
             <Message
               key={m._id}
               message={m}
-              ownMessage={
-                String(m.sender?._id) === String(currentUser._id)
-              }
+              ownMessage={String(m.sender?._id) === String(currentUser._id)}
             />
           ))
         )}

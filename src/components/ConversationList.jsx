@@ -1,12 +1,5 @@
-// ConversationList.jsx — FINAL (with onOpenUserProfile support)
-
 import React from "react";
-import {
-  Flex,
-  Skeleton,
-  SkeletonCircle,
-  Text,
-} from "@chakra-ui/react";
+import { Flex, Skeleton, SkeletonCircle, Text } from "@chakra-ui/react";
 
 import Conversation from "./Conversation";
 import { useRecoilValue } from "recoil";
@@ -19,7 +12,7 @@ const ConversationList = ({
   onOpenGroupProfile,
   onOpenUserProfile,
   onDelete,
-  deletingId
+  deletingId,
 }) => {
   const currentUser = useRecoilValue(userAtom);
 
@@ -74,9 +67,7 @@ const ConversationList = ({
 
         if (conversation.isGroup) {
           const otherMembers = ids.filter((id) => id !== myId);
-          isOnline = otherMembers.some((id) =>
-            onlineUsers.includes(id)
-          );
+          isOnline = otherMembers.some((id) => onlineUsers.includes(id));
         } else {
           const other = ids.find((id) => id !== myId);
           isOnline = other ? onlineUsers.includes(other) : false;

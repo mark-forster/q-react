@@ -19,7 +19,7 @@ import {
   Box,
   SkeletonCircle,
   Skeleton,
-  Spinner, // Import Spinner component
+  Spinner,
 } from "@chakra-ui/react";
 import { SearchIcon } from "@chakra-ui/icons";
 import toast from "react-hot-toast";
@@ -39,11 +39,11 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
-  const [isForwarding, setIsForwarding] = useState(false); // New state for forwarding spinner
+  const [isForwarding, setIsForwarding] = useState(false); 
   const [searchedUsers, setSearchedUsers] = useState([]);
   const currentUser = useRecoilValue(userAtom);
 
-  // Debounced user search
+  //  user search
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.trim()) {
@@ -90,7 +90,7 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
         return;
       }
 
-      setIsForwarding(true); // Start the spinner
+      setIsForwarding(true); 
       
       await api.post(`/messages/message/forward/${messageToForward._id}`, {
         recipientIds: selectedUsers,
@@ -105,7 +105,7 @@ const ForwardMessageModal = ({ isOpen, onClose, messageToForward, conversations 
       console.error("Error forwarding message:", error);
       toast.error(error?.response?.data?.error || "Unknown error");
     } finally {
-      setIsForwarding(false); // Stop the spinner
+      setIsForwarding(false); 
     }
   };
 const itemsToDisplay = searchQuery.trim()
@@ -116,17 +116,17 @@ const itemsToDisplay = searchQuery.trim()
       avatar: u.profilePic,
     }))
   : conversations.map(c => {
-      // ✅ GROUP
+   
       if (c.isGroup) {
         return {
           type: "group",
-          id: c._id,              // ⭐ conversationId
+          id: c._id,            
           title: c.name || "Group Chat",
           avatar: null,
         };
       }
 
-      // ✅ DM (User)
+      
       const friend = c.participants.find(
         p => p._id !== currentUser._id
       );
@@ -236,9 +236,9 @@ const itemsToDisplay = searchQuery.trim()
             colorScheme="blue"
             mr={3}
             onClick={handleSend}
-            isLoading={isForwarding} // Show loading spinner
-            loadingText="Forwarding" // Change button text while loading
-            isDisabled={!selectedUsers.length || isForwarding} // Disable button while loading or no users selected
+            isLoading={isForwarding} 
+            loadingText="Forwarding" 
+            isDisabled={!selectedUsers.length || isForwarding} 
           >
             Send To ({selectedUsers.length})
           </Button>

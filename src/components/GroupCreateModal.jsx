@@ -1,5 +1,3 @@
-// GroupCreateModal.jsx — Messenger UI Only (Logic unchanged)
-
 import {
   Modal,
   ModalOverlay,
@@ -16,6 +14,7 @@ import {
   Text,
   Spinner,
   useToast,
+  useColorModeValue,
 } from "@chakra-ui/react";
 
 import React, { useEffect, useState } from "react";
@@ -39,7 +38,7 @@ export default function GroupCreateModal({ isOpen, onClose, onCreated }) {
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading,setLoading]= useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -69,9 +68,7 @@ export default function GroupCreateModal({ isOpen, onClose, onCreated }) {
       const term = searchTerm.toLowerCase();
       setFilteredUsers(
         users.filter((u) =>
-          (u.name || u.username || "")
-            .toLowerCase()
-            .includes(term)
+          (u.name || u.username || "").toLowerCase().includes(term)
         )
       );
     }, 300);
@@ -81,9 +78,7 @@ export default function GroupCreateModal({ isOpen, onClose, onCreated }) {
 
   const toggleMember = (id) => {
     setSelectedMembers((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
@@ -157,17 +152,41 @@ export default function GroupCreateModal({ isOpen, onClose, onCreated }) {
                   justify="space-between"
                   p={2}
                   borderRadius="md"
-                  _hover={{ bg: "gray.100" }}
+                  _hover={{
+                    bg: useColorModeValue("#d5ebf6", "#c1f0f040"),
+                    opacity: 0.9,
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                  }}
+                  onClick={() => toggleMember(u._id)}
+                  cursor={"pointer"}
                 >
                   <Flex align="center" gap={3}>
                     <Avatar size="sm" src={u.profilePic?.url || ""} />
-                    <Text>{u.name}</Text>
+                    <Text color={useColorModeValue("dark", "white")}>
+                      {u.name}
+                    </Text>
                   </Flex>
 
                   <Checkbox
                     isChecked={selectedMembers.includes(u._id)}
                     onChange={() => toggleMember(u._id)}
-                    colorScheme="purple"
+                    sx={{
+                      "span.chakra-checkbox__control": {
+                        borderColor: useColorModeValue(
+                          "gray.300",
+                          "whiteAlpha.500"
+                        ),
+                        borderWidth: "2px",
+                        _checked: {
+                          bg: useColorModeValue("#23ADE3", "#3FB07B"),
+                          borderColor: useColorModeValue("#23ADE3", "#3FB07B"),
+                          color: "white",
+                        },
+                        _hover: {
+                          borderColor: useColorModeValue("#23ADE3", "#3FB07B"),
+                        },
+                      },
+                    }}
                   />
                 </Flex>
               ))}
@@ -177,13 +196,17 @@ export default function GroupCreateModal({ isOpen, onClose, onCreated }) {
 
         <ModalFooter>
           <Button
-            colorScheme="purple"
             w="100%"
             borderRadius="full"
             onClick={handleCreate}
-             isLoading={loading}
+            isLoading={loading}
             loadingText="Creating..."
             isDisabled={loading}
+            bg={useColorModeValue("#23ADE3", "#3FB07B")}
+            _hover={{
+              opacity: 0.9,
+              boxShadow: "0 4px 12px rgba(35, 173, 227, 0.3)",
+            }}
           >
             Create Group
           </Button>

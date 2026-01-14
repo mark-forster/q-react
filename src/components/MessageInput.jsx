@@ -1,5 +1,3 @@
-// MessageInput.jsx — FINAL B3 + EDITING + TYPING
-
 import React, { useState, useRef, useEffect } from "react";
 import {
   Flex,
@@ -12,12 +10,23 @@ import {
   Text,
   Grid,
   Box,
+  useColorModeValue,
 } from "@chakra-ui/react";
 
 import { IoSendSharp } from "react-icons/io5";
 import { BsEmojiSmile } from "react-icons/bs";
-import { FaPaperclip, FaTimes, FaMicrophone, FaStopCircle } from "react-icons/fa";
-import { FaRegFileAlt, FaFilePdf, FaFileWord, FaFileExcel } from "react-icons/fa";
+import {
+  FaPaperclip,
+  FaTimes,
+  FaMicrophone,
+  FaStopCircle,
+} from "react-icons/fa";
+import {
+  FaRegFileAlt,
+  FaFilePdf,
+  FaFileWord,
+  FaFileExcel,
+} from "react-icons/fa";
 import { FaFileVideo, FaFileAudio } from "react-icons/fa6";
 import { IoIosPlayCircle } from "react-icons/io";
 import { GiPauseButton } from "react-icons/gi";
@@ -48,14 +57,15 @@ const api = axios.create({
 });
 
 // ===================================================
-// MIME Helpers
+//  Helpers
 // ===================================================
 function pickSupportedMime() {
   if (window?.MediaRecorder?.isTypeSupported) {
     if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
       return "audio/webm;codecs=opus";
     if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
-    if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+    if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus"))
+      return "audio/ogg;codecs=opus";
     if (MediaRecorder.isTypeSupported("audio/ogg")) return "audio/ogg";
   }
   return "audio/webm";
@@ -76,10 +86,12 @@ const MessageInput = ({ setMessages }) => {
   const [messageText, setMessageText] = useState("");
 
   const [focusInput, setFocusInput] = useRecoilState(focusInputAtom);
-  const [selectedConversation, setSelectedConversation] =
-    useRecoilState(selectedConversationAtom);
+  const [selectedConversation, setSelectedConversation] = useRecoilState(
+    selectedConversationAtom
+  );
 
-  const [editingMessage, setEditingMessage] = useRecoilState(editingMessageAtom);
+  const [editingMessage, setEditingMessage] =
+    useRecoilState(editingMessageAtom);
 
   const setConversations = useSetRecoilState(conversationsAtom);
   const user = useRecoilValue(userAtom);
@@ -115,12 +127,12 @@ const MessageInput = ({ setMessages }) => {
 
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
-useEffect(() => {
-  if (focusInput) {
-    inputRef.current?.focus(); 
-    setFocusInput(false); 
-  }
-}, [focusInput])
+  useEffect(() => {
+    if (focusInput) {
+      inputRef.current?.focus();
+      setFocusInput(false);
+    }
+  }, [focusInput]);
   // Typing timeout (for stopTyping)
   const typingTimeoutRef = useRef(null);
 
@@ -132,13 +144,13 @@ useEffect(() => {
       setMessageText(editingMessage.text || "");
       inputRef.current?.focus();
     } else if (!editingMessage?.replyTo) {
-      // reply mode only => don't clear text
+      // reply mode only 
       setMessageText("");
     }
   }, [editingMessage]);
 
   // ===================================================
-  // Recorder Blob → URL
+  // Recorder
   // ===================================================
   useEffect(() => {
     if (recordingBlob) {
@@ -179,9 +191,17 @@ useEffect(() => {
       if (f.type.startsWith("video/")) return { type: "video", name: f.name };
       if (f.type.startsWith("audio/")) return { type: "audio", name: f.name };
       if (f.type.includes("pdf")) return { type: "pdf", name: f.name };
-      if (f.type.includes("word") || f.name.endsWith(".doc") || f.name.endsWith(".docx"))
+      if (
+        f.type.includes("word") ||
+        f.name.endsWith(".doc") ||
+        f.name.endsWith(".docx")
+      )
         return { type: "word", name: f.name };
-      if (f.type.includes("excel") || f.name.endsWith(".xls") || f.name.endsWith(".xlsx"))
+      if (
+        f.type.includes("excel") ||
+        f.name.endsWith(".xls") ||
+        f.name.endsWith(".xlsx")
+      )
         return { type: "excel", name: f.name };
       return { type: "file", name: f.name };
     });
@@ -208,7 +228,7 @@ useEffect(() => {
   };
 
   // ===================================================
-  // MESSAGE EDITING LOGIC
+  // MESSAGE EDITING 
   // ===================================================
   const updateMessage = async () => {
     try {
@@ -224,15 +244,15 @@ useEffect(() => {
         return;
       }
 
-      const res = await api.put(
-        `/messages/update/${editingMessage._id}`,
-        { newText: trimmed }
-      );
+      const res = await api.put(`/messages/update/${editingMessage._id}`, {
+        newText: trimmed,
+      });
 
       const updated = res.data.data;
 
-      // Update UI (messages state comes from parent via setMessages)
-      setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+      setMessages((prev) =>
+        prev.map((m) => (m._id === updated._id ? updated : m))
+      );
 
       setConversations((prev) =>
         prev.map((c) =>
@@ -263,7 +283,7 @@ useEffect(() => {
       setEditingMessage(null);
       setMessageText("");
 
-      // stop typing when edit done
+      // stop typing 
       emitStopTyping();
     } catch (err) {
       console.error(err);
@@ -272,7 +292,7 @@ useEffect(() => {
   };
 
   // ===================================================
-  // TYPING EVENTS (Telegram-style)
+  // TYPING EVENTS 
   // ===================================================
   const emitTyping = () => {
     if (
@@ -317,30 +337,28 @@ useEffect(() => {
   };
 
   // ==============================
-// RECORDING STATUS EMIT
-// ==============================
-const emitRecording = () => {
-  if (!socket || !selectedConversation?._id) return;
+  // RECORDING STATUS EMIT
+  // ==============================
+  const emitRecording = () => {
+    if (!socket || !selectedConversation?._id) return;
 
-  socket.emit("recording", {
-    conversationId: selectedConversation._id,
-    userId: user._id,
-  });
-};
+    socket.emit("recording", {
+      conversationId: selectedConversation._id,
+      userId: user._id,
+    });
+  };
 
-const emitStopRecording = () => {
-  if (!socket || !selectedConversation?._id) return;
+  const emitStopRecording = () => {
+    if (!socket || !selectedConversation?._id) return;
 
-  socket.emit("stopRecording", {
-    conversationId: selectedConversation._id,
-    userId: user._id,
-  });
-};
-
-
+    socket.emit("stopRecording", {
+      conversationId: selectedConversation._id,
+      userId: user._id,
+    });
+  };
 
   // ===================================================
-  // SEND MESSAGE (B2 + EDIT MERGE)
+  // SEND MESSAGE 
   // ===================================================
   const handleSendMessage = async (e) => {
     e?.preventDefault?.();
@@ -373,11 +391,11 @@ const emitStopRecording = () => {
     const tempMessage = {
       _id: tempId,
       sender: {
-    _id: user._id,          
-    name: user.name,
-    username: user.username,
-    profilePic: user.profilePic,
-  },
+        _id: user._id,
+        name: user.name,
+        username: user.username,
+        profilePic: user.profilePic,
+      },
       text: trimmed,
       attachments: [],
       conversationId: selectedConversation._id,
@@ -411,68 +429,60 @@ const emitStopRecording = () => {
     const form = new FormData();
     if (trimmed) form.append("message", trimmed);
 
-if (editingMessage?.replyTo?._id) {
-  form.append("replyTo", editingMessage.replyTo._id);
-}
+    if (editingMessage?.replyTo?._id) {
+      form.append("replyTo", editingMessage.replyTo._id);
+    }
 
     if (!selectedConversation.mock)
       form.append("conversationId", selectedConversation._id);
-    else
-      form.append("recipientId", selectedConversation.userId);
+    else form.append("recipientId", selectedConversation.userId);
 
     if (hasFiles) {
       selectedFiles.forEach((f) => form.append("files", f));
     } else if (hasVoice) {
       const mime = voiceBlob.type;
       const ext = extFromMime(mime);
-      const audioFile = new File(
-        [voiceBlob],
-        `voice_${Date.now()}.${ext}`,
-        { type: mime }
-      );
+      const audioFile = new File([voiceBlob], `voice_${Date.now()}.${ext}`, {
+        type: mime,
+      });
       form.append("files", audioFile);
     }
 
     try {
       const res = await api.post("/messages", form);
       const real = res.data.data;
-setMessages((prev) =>
-  prev.map((m) => (m._id === tempId ? real : m))
-);
+      setMessages((prev) => prev.map((m) => (m._id === tempId ? real : m)));
 
-setConversations((prev) => {
-  const updated = prev.map((c) =>
-    String(c._id) === String(real.conversationId)
-      ? {
-          ...c,
-          lastMessage: {
-            _id: real._id,
-            text: real.text || "",
-            sender: real.sender,
-            updatedAt: real.createdAt,
-          },
-        }
-      : c
-  );
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          String(c._id) === String(real.conversationId)
+            ? {
+                ...c,
+                lastMessage: {
+                  _id: real._id,
+                  text: real.text || "",
+                  sender: real.sender,
+                  updatedAt: real.createdAt,
+                },
+              }
+            : c
+        );
 
-  const target = updated.find(
-    (c) => String(c._id) === String(real.conversationId)
-  );
-  const rest = updated.filter(
-    (c) => String(c._id) !== String(real.conversationId)
-  );
+        const target = updated.find(
+          (c) => String(c._id) === String(real.conversationId)
+        );
+        const rest = updated.filter(
+          (c) => String(c._id) !== String(real.conversationId)
+        );
 
-  return target ? [target, ...rest] : updated;
-});
+        return target ? [target, ...rest] : updated;
+      });
 
-setEditingMessage(null);
-
+      setEditingMessage(null);
     } catch {
       toast.error("Failed to send.");
       setMessages((prev) =>
-        prev.map((m) =>
-          m._id === tempId ? { ...m, status: "failed" } : m
-        )
+        prev.map((m) => (m._id === tempId ? { ...m, status: "failed" } : m))
       );
     } finally {
       setIsSending(false);
@@ -484,15 +494,15 @@ setEditingMessage(null);
   // ===================================================
   // Audio Controls
   // ===================================================
-const toggleRecording = () => {
-  if (isRecording) {
-    stopRecording();
-    emitStopRecording(); 
-  } else {
-    emitRecording();
-    startRecording();
-  }
-};
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+      emitStopRecording();
+    } else {
+      emitRecording();
+      startRecording();
+    }
+  };
 
   const togglePlayPause = () => {
     const p = audioPlayerRef.current;
@@ -519,36 +529,36 @@ const toggleRecording = () => {
   // ===================================================
   return (
     <>
-    {editingMessage?.replyTo && (
-  <Flex
-    bg="blackAlpha.100"
-    borderLeft="4px solid #3182ce"
-    p={2}
-    mb={2}
-    borderRadius="md"
-    justify="space-between"
-    align="center"
-  >
-    <Flex direction="column">
-      <Text fontSize="xs" fontWeight="bold" color="blue.400">
-        Replying to{" "}
-        {editingMessage.replyTo.sender?.name ||
-          editingMessage.replyTo.sender?.username}
-      </Text>
+      {editingMessage?.replyTo && (
+        <Flex
+          bg="blackAlpha.100"
+          borderLeft="4px solid #3182ce"
+          p={2}
+          mb={2}
+          borderRadius="md"
+          justify="space-between"
+          align="center"
+        >
+          <Flex direction="column">
+            <Text fontSize="xs" fontWeight="bold" color="blue.400">
+              Replying to{" "}
+              {editingMessage.replyTo.sender?.name ||
+                editingMessage.replyTo.sender?.username}
+            </Text>
 
-      <Text fontSize="xs" noOfLines={1}>
-        {editingMessage.replyTo.text || "Attachment"}
-      </Text>
-    </Flex>
+            <Text fontSize="xs" noOfLines={1}>
+              {editingMessage.replyTo.text || "Attachment"}
+            </Text>
+          </Flex>
 
-    <IconButton
-      size="xs"
-      icon={<FaTimes />}
-      variant="ghost"
-      onClick={() => setEditingMessage(null)}
-    />
-  </Flex>
-)}
+          <IconButton
+            size="xs"
+            icon={<FaTimes />}
+            variant="ghost"
+            onClick={() => setEditingMessage(null)}
+          />
+        </Flex>
+      )}
 
       {/* Audio Preview */}
       {audioURL && (
@@ -574,7 +584,9 @@ const toggleRecording = () => {
             icon={<FaTimes />}
             onClick={handleRemoveAudio}
             size="xs"
-            colorScheme="red"
+            bg={useColorModeValue("red.500", "red.600")}
+            color="white"
+            
           />
         </HStack>
       )}
@@ -600,7 +612,13 @@ const toggleRecording = () => {
               pos="relative"
             >
               {p.type === "image" ? (
-                <Image src={p.url} w="100%" h="80px" objectFit="cover" borderRadius="md" />
+                <Image
+                  src={p.url}
+                  w="100%"
+                  h="80px"
+                  objectFit="cover"
+                  borderRadius="md"
+                />
               ) : (
                 <Box fontSize="3xl">
                   {p.type === "video" && <FaFileVideo />}
@@ -672,7 +690,7 @@ const toggleRecording = () => {
             <IconButton
               icon={showSendBtn ? <IoSendSharp /> : <BsEmojiSmile />}
               size="sm"
-              colorScheme="blue"
+              bg={useColorModeValue("#23ADE3", "#3FB07B")}
               ml={2}
               onClick={handleSendMessage}
               isDisabled={isSending}

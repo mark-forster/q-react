@@ -25,20 +25,20 @@ const Header = () => {
   const { colorMode, toggleColorMode } = useColorMode();
   const navigate = useNavigate();
 
-  // The logout logic is now handled here.
+  // logout
   const handleLogout =async () => {
 
     try {
-        const API_BASE = import.meta.env.VITE_API_URL || "";  // Env variable  "" (local proxy )
+        const API_BASE = import.meta.env.VITE_API_URL || "";  
       const api = axios.create({
-      baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",  // production or dev proxy
+      baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",  
         withCredentials: true,
       });
    const result = await api.post("/auth/logout");
   } catch (err) {
     console.error("Logout error:", err);
   }
-  setUser(null); // ✅ frontend state clear
+  setUser(null); 
   navigate("/auth");
   };
 
@@ -93,7 +93,7 @@ const Header = () => {
                 <MenuItem as={RouterLink} to={`/profile/${user._id}`}>
                   Profile
                 </MenuItem>
-                {/* Settings Link (placeholder) */}
+                {/* Settings  (placeholder) */}
                 <MenuItem as={RouterLink} to="/settings">
                   Settings
                 </MenuItem>

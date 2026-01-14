@@ -1,5 +1,3 @@
-// Conversation.jsx — Messenger Style + Telegram Avatar Fallback + View User/Group
-
 import React, { useState } from "react";
 import {
   Flex,
@@ -39,7 +37,7 @@ const Conversation = ({
   onDelete,
   onOpenGroupProfile,
   onOpenUserProfile,
-  deletingId
+  deletingId,
 }) => {
   const currentUser = useRecoilValue(userAtom);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
@@ -50,7 +48,7 @@ const Conversation = ({
 
   const { socket } = useSocket();
 
-  // Merge from global list
+  // Merge from  list
   const merged =
     conversations.find((c) => c._id === conversation._id) || conversation;
 
@@ -72,9 +70,8 @@ const Conversation = ({
   const callInfo = lastMessage?.callInfo;
 
   const unread = Number(merged.unreadCount || 0);
-const selectedBg = useColorModeValue("gray.200", "#243b53");
-const hoverBg = useColorModeValue("gray.100", "#334e68");
-
+  const selectedBg = useColorModeValue("gray.200", "#243b53");
+  const hoverBg = useColorModeValue("gray.100", "#334e68");
 
   // Click conversation
   const onClick = () => {
@@ -100,9 +97,7 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
     }
 
     setConversations((prev) =>
-      prev.map((c) =>
-        c._id === merged._id ? { ...c, unreadCount: 0 } : c
-      )
+      prev.map((c) => (c._id === merged._id ? { ...c, unreadCount: 0 } : c))
     );
 
     socket?.emit("joinConversationRoom", { conversationId: merged._id });
@@ -122,15 +117,12 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
   };
 
   // Seen indicator
-  const lastSenderId =
-    lastMessage?.sender?._id || lastMessage?.sender || null;
+  const lastSenderId = lastMessage?.sender?._id || lastMessage?.sender || null;
 
   const meId = String(currentUser?._id);
   const friendId = String(friend?._id);
 
-  const seenList = lastMessage?.seenBy
-    ? lastMessage.seenBy.map(String)
-    : [];
+  const seenList = lastMessage?.seenBy ? lastMessage.seenBy.map(String) : [];
 
   const isSeen =
     !isGroup &&
@@ -153,9 +145,7 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
       if (["missed", "timeout"].includes(callInfo.status)) {
         icon = <FiPhoneMissed size={14} />;
         previewText =
-          callInfo.callType === "audio"
-            ? "Missed call"
-            : "Missed video call";
+          callInfo.callType === "audio" ? "Missed call" : "Missed video call";
         color = "red.500";
       } else if (
         ["declined", "rejected", "cancelled"].includes(callInfo.status)
@@ -183,9 +173,7 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
 
     if (!lastText) return "No messages yet";
 
-    return lastText.length > 30
-      ? lastText.slice(0, 30) + "..."
-      : lastText;
+    return lastText.length > 30 ? lastText.slice(0, 30) + "..." : lastText;
   };
 
   const initials = getInitials(chatName);
@@ -193,19 +181,21 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
 
   const isSelected = selectedConversation?._id === merged._id;
 
-   return (
-   <Flex
-  gap={4}
-  alignItems="center"
-  p={2}
-  borderRadius="md"
-  cursor={isDeleting || deletingId === merged._id ? "not-allowed" : "pointer"}
-  opacity={isDeleting || deletingId === merged._id ? 0.45 : 1}
-  pointerEvents={isDeleting || deletingId === merged._id ? "none" : "auto"}
-  _hover={{ bg: hoverBg }}
-  bg={isSelected ? selectedBg : "transparent"}
-  onClick={onClick}
->
+  return (
+    <Flex
+      gap={4}
+      alignItems="center"
+      p={2}
+      borderRadius="md"
+      cursor={
+        isDeleting || deletingId === merged._id ? "not-allowed" : "pointer"
+      }
+      opacity={isDeleting || deletingId === merged._id ? 0.45 : 1}
+      pointerEvents={isDeleting || deletingId === merged._id ? "none" : "auto"}
+      _hover={{ bg: hoverBg }}
+      bg={isSelected ? selectedBg : "transparent"}
+      onClick={onClick}
+    >
       <WrapItem>
         {isGroup ? (
           <Flex
@@ -222,10 +212,7 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
           </Flex>
         ) : profilePic ? (
           <Avatar size="sm" src={profilePic}>
-            <AvatarBadge
-              boxSize="1em"
-              bg={isOnline ? "green.500" : "orange"}
-            />
+            <AvatarBadge boxSize="1em" bg={isOnline ? "green.500" : "orange"} />
           </Avatar>
         ) : (
           <Flex
@@ -277,7 +264,7 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
         )}
       </Stack>
 
-      {/* Menu (Telegram style: View / Delete) */}
+      {/* Menu*/}
       <Box
         onClick={(e) => {
           e.stopPropagation();
@@ -299,20 +286,20 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
             >
               {/* VIEW */}
               <MenuItem
-  onClick={() => {
-    if (isGroup) {
-      onOpenUserProfile &&
-        onOpenUserProfile({
-          ...merged,
-          isGroup: true, 
-        });
-    } else {
-      onOpenUserProfile && onOpenUserProfile(friend);
-    }
-  }}
->
-  {isGroup ? "View Group" : "View User"}
-</MenuItem>
+                onClick={() => {
+                  if (isGroup) {
+                    onOpenUserProfile &&
+                      onOpenUserProfile({
+                        ...merged,
+                        isGroup: true,
+                      });
+                  } else {
+                    onOpenUserProfile && onOpenUserProfile(friend);
+                  }
+                }}
+              >
+                {isGroup ? "View Group" : "View User"}
+              </MenuItem>
 
               {/* DELETE */}
               <MenuItem
@@ -321,8 +308,8 @@ const hoverBg = useColorModeValue("gray.100", "#334e68");
                 }}
               >
                 {(isDeleting || deletingId === merged._id) && (
-  <Spinner size="sm" mr={2} />
-)}
+                  <Spinner size="sm" mr={2} />
+                )}
                 Delete Chat
               </MenuItem>
             </MenuList>

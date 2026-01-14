@@ -1,5 +1,3 @@
-// components/UserProfileSidebar.jsx — Telegram-style User Info
-
 import React from "react";
 import {
   Box,
@@ -112,6 +110,7 @@ const UserProfileSidebar = ({ user, onClose, isOnline }) => {
             size="sm"
             variant="outline"
             borderRadius="full"
+             bg={useColorModeValue("#23ADE3","#3FB07B")}
           >
             Call
           </Button>
@@ -123,6 +122,7 @@ const UserProfileSidebar = ({ user, onClose, isOnline }) => {
             size="sm"
             variant="outline"
             borderRadius="full"
+            bg={useColorModeValue("#23ADE3","#3FB07B")}
           >
             Video
           </Button>
@@ -131,7 +131,7 @@ const UserProfileSidebar = ({ user, onClose, isOnline }) => {
 
       <Divider my={4} />
 
-      {/* Info section (you can extend later) */}
+      {/* Info section  */}
       <Box px={4} pb={4} flex="1" overflowY="auto">
         <Stack spacing={4}>
           {/* Phone */}

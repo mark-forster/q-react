@@ -1,5 +1,3 @@
-// src/layouts/AppLayout.jsx  (FINAL FIXED FULLSCREEN VERSION)
-
 import React from "react";
 import { Flex } from "@chakra-ui/react";
  import GlobalHeader from "../components/GlobalHeader";
@@ -12,7 +10,7 @@ const AppLayout = ({ children }) => {
       direction="column"
       w="100vw"
       h="100vh"
-      overflow="hidden"     // VERY IMPORTANT
+      overflow="hidden"   
       bg="gray.100"
     >
       {/* TOP GLOBAL HEADER */}

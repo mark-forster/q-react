@@ -1,5 +1,3 @@
-// ChatPage.jsx — FINAL UPDATED (Fix duplicate conversation when search user + send first message)
-
 import {
   Box,
   Flex,
@@ -23,7 +21,7 @@ import {
 
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import useIncomingCall from "./hooks/useIncomingCall"; // ✅ NEW
+import useIncomingCall from "./hooks/useIncomingCall"; 
 
 import MessageContainer from "./components/MessageContainer";
 import ConversationList from "./components/ConversationList";
@@ -110,7 +108,7 @@ const ChatPage = () => {
     rejectCall,
   } = useIncomingCall(socket);
 
-  // 🔹 User Info Sidebar state
+  //  User Info Sidebar state
   const [userProfileSidebarData, setUserProfileSidebarData] = useState(null);
   const [isUserSidebarOpen, setIsUserSidebarOpen] = useState(false);
 
@@ -144,7 +142,7 @@ const ChatPage = () => {
   };
 
   // -------------------------------------------------------------------
-  // SOCKET: newMessage (NO duplicate push) + conversationRestored
+  // SOCKET: newMessage 
   // -------------------------------------------------------------------
   useEffect(() => {
     if (!socket) return;
@@ -253,7 +251,7 @@ socket.on("callStarted", ({ roomID, callType }) => {
     prev.map((c) => {
       if (
         String(c._id) === String(roomID) &&
-        c.isGroup === true        // ⭐ အရေးကြီးဆုံး
+        c.isGroup === true        
       ) {
         return {
           ...c,
@@ -531,7 +529,7 @@ socket.on("roomEnded", ({ roomID }) => {
           borderColor={useColorModeValue("gray.200", "gray.700")}
         >
           {filterType === "groups" && (
-            <Button size="sm" colorScheme="purple" onClick={openGroupCreate}>
+            <Button size="sm" bg={useColorModeValue("#23ADE3", "#3FB07B")}  onClick={openGroupCreate}>
               Create Group
             </Button>
           )}
@@ -653,7 +651,7 @@ socket.on("roomEnded", ({ roomID }) => {
         onClose={closeGroupCreate}
         onCreated={handleGroupCreated}
       />
-      {/* 🔔 INCOMING CALL MODAL (GLOBAL) */}
+      {/*  INCOMING CALL MODAL (GLOBAL) */}
       {incomingCallData && (
         <Modal isOpen={isIncomingCallOpen} isCentered>
           <ModalOverlay />

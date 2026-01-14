@@ -85,11 +85,11 @@ const LeftAppSidebar = ({ onChangeFilter }) => {
                 filterType === item.id ? "blue.300" : "gray.400"
               )}
               _hover={{
-                bg: useColorModeValue("gray.200", "gray.700"),
+                bg: useColorModeValue("#d7dbe0", "#f4f7fa59")
               }}
               bg={
                 filterType === item.id
-                  ? useColorModeValue("gray.300", "#243b53")
+                  ? useColorModeValue("#d7dbe0", "#f4f7fa59")
                   : "transparent"
               }
               onClick={() => handleClick(item.id)}
@@ -100,8 +100,8 @@ const LeftAppSidebar = ({ onChangeFilter }) => {
               <Text
                 fontSize="10px"
                 color={useColorModeValue(
-                  filterType === item.id ? "blue.600" : "gray.500",
-                  filterType === item.id ? "blue.300" : "gray.400"
+                  filterType === item.id ? "#23ADE3" : "#23ADE3",
+                  filterType === item.id ? "#3FB07B" : "#3FB07B",
                 )}
                 fontWeight={filterType === item.id ? "bold" : "normal"}
                 borderRadius="md"

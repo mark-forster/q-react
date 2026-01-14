@@ -39,9 +39,6 @@ const Actions = ({ post }) => {
       const response = await axios.put(`/api/v1/posts/like/${post._id}`);
 
       if (!liked) {
-        //set the currentuserId to the post.likes array
-
-        // add the id of the current user to post.likes array
         const updatedPosts = posts.map((p) => {
           if (p._id === post._id) {
             return { ...p, likes: [...p.likes, user._id] };

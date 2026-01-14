@@ -8,11 +8,14 @@ import {
   Button,
   Heading,
   Text,
-  useColorModeValue,
   Link,
   InputGroup,
   InputRightElement,
+  Image,
+  VStack,
 } from "@chakra-ui/react";
+import bgImage from "../assets/images/bg.png";
+import logo from "../assets/images/logo.png";
 import { useState, useEffect } from "react";
 import { ViewIcon, ViewOffIcon } from "@chakra-ui/icons";
 import { useSetRecoilState } from "recoil";
@@ -32,15 +35,14 @@ function SignupCard() {
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+const brandGradient = "linear-gradient(135deg, #23ADE3 0%, #3FB07B 100%)";
+  /* ===== LOGIC  ===== */
   useEffect(() => {
     if (inputs.email.includes("@")) {
       const usernameFromEmail = "@" + inputs.email.split("@")[0];
-      setInputs((prevInputs) => ({
-        ...prevInputs,
-        username: usernameFromEmail,
-      }));
+      setInputs((prev) => ({ ...prev, username: usernameFromEmail }));
     } else {
-      setInputs((prevInputs) => ({ ...prevInputs, username: "" }));
+      setInputs((prev) => ({ ...prev, username: "" }));
     }
   }, [inputs.email]);
 
@@ -49,31 +51,21 @@ function SignupCard() {
     setIsLoading(true);
     let finalInputs = { ...inputs };
     if (finalInputs.email && !finalInputs.username) {
-      if (finalInputs.email.includes("@")) {
-        finalInputs.username = "@" + finalInputs.email.split("@")[0];
-      }
+      finalInputs.username = "@" + finalInputs.email.split("@")[0];
     }
-
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || ""; // Env variable  "" (local proxy)
-
+      const API_BASE = import.meta.env.VITE_API_URL || "";
       const api = axios.create({
-        baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1", // production or dev proxy
+        baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
         withCredentials: true,
       });
-      console.log(finalInputs.username);
-
       const result = await api.post("/auth/register", finalInputs);
-
       if (result.status === 200) {
         toast.success(result.data.message);
         navigate("/verify-otp", { state: { inputs: finalInputs } });
       }
     } catch (error) {
-      console.error(error);
-      const errorMessage =
-        error.response?.data?.errorMessage ||
-        "Signup failed due to a network error.";
+      const errorMessage = error.response?.data?.errorMessage || "Signup failed.";
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -81,104 +73,139 @@ function SignupCard() {
   };
 
   return (
-    <Flex align={"center"} justify={"center"}>
-      <Stack spacing={8} mx={"auto"} maxW={"lg"} py={12} px={6}>
-        <Stack align={"center"}>
-          <Heading fontSize={"4xl"} textAlign={"center"}>
-            Sign Up
-          </Heading>
-        </Stack>
-        <Box
-          rounded={"lg"}
-          bg={useColorModeValue("white", "gray.700")}
-          boxShadow={"lg"}
-          p={8}
-        >
-          <Stack spacing={4}>
+    <Flex
+      minH="100vh"
+      align="center"
+      justify="center"
+      bgImage={`url(${bgImage})`}
+      bgSize="cover"
+      bgPosition="center"
+    >
+      <Box
+        w="full"
+        maxW="420px"
+        bg="rgba(255, 255, 255, 0.95)" 
+        px={10}
+        py={12}
+        borderRadius="2xl"
+        boxShadow="0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+      >
+        <VStack spacing={6}>
+          {/* Header Section */}
+          <VStack spacing={2} mb={1}>
+            <Image src={logo} alt="Logo" boxSize="70px" objectFit="contain" />
+            <Heading fontSize="2xl" color="black" fontWeight="800"
+              bgGradient={brandGradient} 
+              bgClip="text"
+              letterSpacing="tight">
+              Arakkha Chat
+            </Heading>
+           
+          </VStack>
+
+          <Stack spacing={4} w="full">
+             <Text fontSize="md" color="gray.500" fontWeight="500">
+              Create Account
+            </Text>
+            {/* Name Field */}
             <FormControl isRequired>
-              <FormLabel>Name</FormLabel>
+              <FormLabel fontSize="sm" color="gray.700" fontWeight="600">
+                Name <Text as="span" color="red.500">*</Text>
+              </FormLabel>
               <Input
-                type="text"
-                onChange={(e) => setInputs({ ...inputs, name: e.target.value })}
+                placeholder="Your name"
+                h="45px"
+                color="black"
+                borderColor="gray.300"
+                _hover={{ borderColor: "gray.400" }}
+                _focus={{ borderColor: "#0067b8", boxShadow: "0 0 0 1px #0067b8" }}
                 value={inputs.name}
+                onChange={(e) => setInputs({ ...inputs, name: e.target.value })}
               />
             </FormControl>
 
+            {/* Email Field */}
             <FormControl isRequired>
-              <FormLabel>Email Address</FormLabel>
+              <FormLabel fontSize="sm" color="gray.700" fontWeight="600">
+                Email address <Text as="span" color="red.500">*</Text>
+              </FormLabel>
               <Input
                 type="email"
-                onChange={(e) =>
-                  setInputs({ ...inputs, email: e.target.value })
-                }
+                placeholder="email@example.com"
+                h="45px"
+                color="black"
+                borderColor="gray.300"
+                _hover={{ borderColor: "gray.400" }}
+                _focus={{ borderColor: "#0067b8", boxShadow: "0 0 0 1px #0067b8" }}
                 value={inputs.email}
+                onChange={(e) => setInputs({ ...inputs, email: e.target.value })}
               />
             </FormControl>
 
-            <FormControl isRequired display="none">
-              <FormLabel>Username</FormLabel>
-              <Input
-                type="text"
-                value={inputs.username}
-                onChange={(e) =>
-                  setInputs({ ...inputs, username: e.target.value })
-                }
-              />
-            </FormControl>
-
+            {/* Password Field */}
             <FormControl isRequired>
-              <FormLabel>Password</FormLabel>
+              <FormLabel fontSize="sm" color="gray.700" fontWeight="600">
+                Password <Text as="span" color="red.500">*</Text>
+              </FormLabel>
               <InputGroup>
                 <Input
                   type={showPassword ? "text" : "password"}
-                  onChange={(e) =>
-                    setInputs({ ...inputs, password: e.target.value })
-                  }
+                  placeholder="••••••••"
+                  h="45px"
+                  color="black"
+                  borderColor="gray.300"
+                  _hover={{ borderColor: "gray.400" }}
+                  _focus={{ borderColor: "#0067b8", boxShadow: "0 0 0 1px #0067b8" }}
                   value={inputs.password}
+                  onChange={(e) => setInputs({ ...inputs, password: e.target.value })}
                 />
-                <InputRightElement h={"full"}>
+                <InputRightElement h="full">
                   <Button
-                    variant={"ghost"}
-                    onClick={() =>
-                      setShowPassword((showPassword) => !showPassword)
-                    }
+                    size="sm"
+                    variant="ghost"
+                    _hover={{ bg: "transparent" }}
+                    onClick={() => setShowPassword(!showPassword)}
                   >
-                    {showPassword ? <ViewIcon /> : <ViewOffIcon />}
+                    {showPassword ? <ViewIcon color="gray.500" /> : <ViewOffIcon color="gray.500" />}
                   </Button>
                 </InputRightElement>
               </InputGroup>
             </FormControl>
-            <Stack spacing={10} pt={2}>
-              <Button
-                isLoading={isLoading}
-                loadingText="Submitting"
-                size="lg"
-                bg={"blue.400"}
-                color={"white"}
-                _hover={{
-                  bg: "blue.500",
-                }}
-                onClick={handleSignup}
+
+            <Button
+              isLoading={isLoading}
+              bgGradient={brandGradient}
+              color="white"
+              h="48px"
+              fontSize="md"
+              fontWeight="bold"
+              mt={4}
+              _hover={{ 
+                opacity: 0.9, 
+                transform: "translateY(-1px)",
+                boxShadow: "0 4px 12px rgba(35, 173, 227, 0.3)"
+              }}
+              _active={{ transform: "translateY(0)" }}
+              transition="all 0.2s"
+              onClick={handleSignup}
+            >
+              Create
+            </Button>
+
+            <Text fontSize="sm" textAlign="center" color="gray.600" pt={2}>
+              Already have an account?{" "}
+              <Link
+                color="#0067b8"
+                fontWeight="700"
+                onClick={() => setAuthScreen("login")}
+                _hover={{ textDecoration: "underline" }}
               >
-                Sign Up
-              </Button>
-            </Stack>
-            <Stack pt={6}>
-              <Text align={"center"}>
-                Already have an account?{" "}
-                <Link
-                  color={"blue.400"}
-                  onClick={() => {
-                    setAuthScreen("login");
-                  }}
-                >
-                  Sign In
-                </Link>
-              </Text>
-            </Stack>
+                Sign In
+              </Link>
+            </Text>
           </Stack>
-        </Box>
-      </Stack>
+        </VStack>
+      </Box>
     </Flex>
   );
 }

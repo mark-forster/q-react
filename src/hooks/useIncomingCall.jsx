@@ -54,7 +54,7 @@ useEffect(() => {
     } catch {}
   };
 
-  // 🔥 GLOBAL incoming call listener
+  //  GLOBAL incoming call listener
   useEffect(() => {
     if (!socket) return;
 
@@ -99,7 +99,7 @@ useEffect(() => {
 
   socket.emit("callRejected", { roomID: incomingCallData.roomID });
 
-  // 🔥 FORCE CLOSE CALL WINDOW (CALLER SIDE)
+  //  FORCE CLOSE CALL WINDOW (CALLER SIDE)
   if (
     activeCallWindowRef.current &&
     !activeCallWindowRef.current.closed

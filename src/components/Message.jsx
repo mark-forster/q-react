@@ -1,5 +1,3 @@
-// Message.jsx — FINAL VERSION (Telegram Avatar Fallback + Correct Call Direction + UI)
-
 import React, { useState } from "react";
 import {
   Flex,
@@ -35,7 +33,7 @@ import { useDisclosure } from "@chakra-ui/react";
 import AttachmentDisplay from "./AttachmentDisplay";
 
 import { useRecoilValue, useSetRecoilState } from "recoil";
-import {  focusInputAtom } from "../atoms/messageAtom";
+import { focusInputAtom } from "../atoms/messageAtom";
 import {
   selectedConversationAtom,
   editingMessageAtom,
@@ -47,14 +45,19 @@ import useDeleteMessage from "../hooks/useDeleteMessage";
 import ForwardMessageModal from "./ForwardMessageModal";
 import { useSocket } from "../context/SocketContext";
 
-// ⭐ Import the avatar helper functions
 import { getInitials, getAvatarColor } from "../utils/avatarHelpers";
 
 // Allowed reactions
 const REACTIONS = ["👍", "❤️", "😂", "😡"];
 
 // ================= DELETE MODAL =================
-const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) => (
+const DeleteMessageModal = ({
+  isOpen,
+  onClose,
+  onDelete,
+  loading,
+  ownMessage,
+}) => (
   <Modal isOpen={isOpen} onClose={onClose} isCentered>
     <ModalOverlay />
     <ModalContent>
@@ -91,7 +94,9 @@ const DeleteMessageModal = ({ isOpen, onClose, onDelete, loading, ownMessage }) 
       </ModalBody>
 
       <ModalFooter>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
       </ModalFooter>
     </ModalContent>
   </Modal>
@@ -124,8 +129,7 @@ const ReactionBar = ({ onReact, alignRight }) => (
     ))}
   </Flex>
 );
-// Reply Message Ui Handling
-// ===============================
+
 // Reply Preview Text Helper
 // ===============================
 const MAX_CHARS = 7;
@@ -133,7 +137,6 @@ const MAX_CHARS = 7;
 const getReplyPreviewText = (msg) => {
   if (!msg) return "Attachment";
 
-  // replyTo populated မလာသေးတဲ့ realtime case
   if (!msg.text && !msg.attachments) {
     return "Attachment Reply";
   }
@@ -148,7 +151,6 @@ const getReplyPreviewText = (msg) => {
     return "Attachment";
   }
 
-  // normal text (5 words truncate)
   // text (CHARACTER based)
   if (msg.text) {
     const text = msg.text.trim();
@@ -163,15 +165,11 @@ const getReplyPreviewText = (msg) => {
   return "Attachment Reply";
 };
 
-
-
-
-
 const Message = ({ ownMessage, message }) => {
-const setFocusInput = useSetRecoilState(focusInputAtom);
+  const setFocusInput = useSetRecoilState(focusInputAtom);
 
   // ===============================
-  // SYSTEM MESSAGE (Messenger style)
+  // SYSTEM MESSAGE
   // ===============================
   if (message.messageType === "system") {
     return (
@@ -207,43 +205,35 @@ const setFocusInput = useSetRecoilState(focusInputAtom);
     onClose: onDeleteModalClose,
   } = useDisclosure();
 
-  const ownMessageBg = useColorModeValue("blue.500", "blue.500");
+  const ownMessageBg = useColorModeValue("#23ADE3", "#3FB07B;");
   const otherBg = useColorModeValue("gray.300", "gray.600");
   const otherText = useColorModeValue("black", "white");
   const timeColor = useColorModeValue("gray.500", "gray.400");
 
+  const isCallMessage =
+    message?.messageType === "call" &&
+    ["completed", "missed", "timeout", "canceled", "declined"].includes(
+      message?.callInfo?.status
+    );
 
-const isCallMessage =
-  message?.messageType === "call" &&
-  ["completed", "missed", "timeout", "canceled", "declined"].includes(
-    message?.callInfo?.status
-  );
+  // ===============================
+  // Forwarded
+  // ===============================
+  const renderForwardedLabel = () => {
+    if (!message?.isForwarded || !message?.forwardedFrom) return null;
 
-// ===============================
-// Forwarded Label
-// ===============================
-const renderForwardedLabel = () => {
-  if (!message?.isForwarded || !message?.forwardedFrom) return null;
+    const name =
+      message.forwardedFrom.name || message.forwardedFrom.username || "Unknown";
 
-  const name =
-    message.forwardedFrom.name ||
-    message.forwardedFrom.username ||
-    "Unknown";
-
-  return (
-    <Text
-      fontSize="xs"
-      color="gray.400"
-      mb={1}
-      fontStyle="italic"
-    >
-      Forwarded from {name}
-    </Text>
-  );
-};
-const hasText =
-  !isCallMessage && Boolean((message?.text || "").trim());
-    const hasAttachments = Array.isArray(message?.attachments) && message.attachments.length > 0;
+    return (
+      <Text fontSize="xs" color="gray.400" mb={1} fontStyle="italic">
+        Forwarded from {name}
+      </Text>
+    );
+  };
+  const hasText = !isCallMessage && Boolean((message?.text || "").trim());
+  const hasAttachments =
+    Array.isArray(message?.attachments) && message.attachments.length > 0;
   const replyTo = message?.replyTo;
   // Render call message bubble
   const renderCallMessage = () => {
@@ -251,80 +241,77 @@ const hasText =
 
     const info = message.callInfo;
 
-const isOutgoing =
-  String(message.sender?._id || message.sender) ===
-  String(user._id);    const icon = info.callType === "audio" ? "📞" : "📹";
+    const isOutgoing =
+      String(message.sender?._id || message.sender) === String(user._id);
+    const icon = info.callType === "audio" ? "📞" : "📹";
     const callWord = info.callType === "audio" ? "call" : "video call";
     const direction = isOutgoing ? "Outgoing" : "Incoming";
 
-let label = "Incoming Call";
+    let label = "Incoming Call";
 
-   if (info.status === "missed" || info.status === "timeout") {
-  label = "Missed Call";
-} else  if (info.status === "canceled") {
-  label = "Canceled Call";
-} else if (info.status === "declined") {
-    label = "Declined Call";
-} else if (isOutgoing) {
-  label = "Outgoing Call";
-}
+    if (info.status === "missed" || info.status === "timeout") {
+      label = "Missed Call";
+    } else if (info.status === "canceled") {
+      label = "Canceled Call";
+    } else if (info.status === "declined") {
+      label = "Declined Call";
+    } else if (isOutgoing) {
+      label = "Outgoing Call";
+    }
 
     return (
-  <Flex
-    bg={ownMessage ? ownMessageBg : otherBg}
-    color="white"
-    px={4}
-    py={3}
-    borderRadius="2xl"
-    minW="220px"
-    maxW="320px"
-    justify="space-between"
-    align="center"
-  >
-    {/* LEFT SIDE */}
-    <Flex direction="column" gap={1}>
-      <Text fontSize="md" fontWeight="600">
-        {label}
-      </Text>
+      <Flex
+        bg={ownMessage ? ownMessageBg : otherBg}
+        color={ownMessage ? "white" : "dark"}
+        px={4}
+        py={3}
+        borderRadius="2xl"
+        minW="220px"
+        maxW="320px"
+        justify="space-between"
+        align="center"
+      >
+        {/* LEFT SIDE */}
+        <Flex direction="column" gap={1}>
+          <Text fontSize="md" fontWeight="600">
+            {label}
+          </Text>
 
-      <Flex align="center" gap={1}>
-        <Text
-          fontSize="sm"
-          color={isOutgoing ? "green.400" : "red.400"}
-        >
-          {isOutgoing ? "↗" : "↙"}
-        </Text>
+          <Flex align="center" gap={1}>
+            <Text fontSize="sm" color={isOutgoing ? "green.400" : "red.400"}>
+              {isOutgoing ? "↗" : "↙"}
+            </Text>
 
-        <Text fontSize="sm" color="gray.400">
-          {moment(message.createdAt).format("h:mm A")}
-          {info.status === "completed" && info.duration
-            ? `, ${info.duration} seconds`
-            : ""}
-        </Text>
+            <Text fontSize="sm" color="gray.400">
+              {moment(message.createdAt).format("h:mm A")}
+              {info.status === "completed" && info.duration
+                ? `, ${info.duration} seconds`
+                : ""}
+            </Text>
+          </Flex>
+        </Flex>
+
+        {/* RIGHT ICON */}
+        <Text fontSize="xl">{info.callType === "audio" ? "📞" : "📹"}</Text>
       </Flex>
-    </Flex>
-
-    {/* RIGHT ICON */}
-    <Text fontSize="xl">
-  {info.callType === "audio" ? "📞" : "📹"}
-</Text>
-  </Flex>
-);
-
+    );
   };
 
-if (
-  !hasText &&
-  !hasAttachments &&
-  !isCallMessage &&
-  !hasReactions &&
-  message.messageType !== "system"
-) {
-  return null;
-}
+  if (
+    !hasText &&
+    !hasAttachments &&
+    !isCallMessage &&
+    !hasReactions &&
+    message.messageType !== "system"
+  ) {
+    return null;
+  }
 
   const handleEdit = () => setEditingMessage(message);
-  const handleReply = () => {setEditingMessage({ replyTo: message });setFocusInput(true);}
+  const handleReply = () => {
+    setEditingMessage({ replyTo: message });
+    setFocusInput(true);
+  };
   const handleForward = () => {
     setMessageToForward(message);
     onForwardModalOpen();
@@ -354,11 +341,21 @@ if (
         </Button>
       )}
 
-      <Button size="sm" leftIcon={<FaReply />} variant="ghost" onClick={handleReply}>
+      <Button
+        size="sm"
+        leftIcon={<FaReply />}
+        variant="ghost"
+        onClick={handleReply}
+      >
         Reply
       </Button>
 
-      <Button size="sm" leftIcon={<FaForward />} variant="ghost" onClick={handleForward}>
+      <Button
+        size="sm"
+        leftIcon={<FaForward />}
+        variant="ghost"
+        onClick={handleForward}
+      >
         Forward
       </Button>
 
@@ -389,50 +386,47 @@ if (
     </Flex>
   );
 
-const renderReactions = () => {
-  if (!Array.isArray(message.reactions) || message.reactions.length === 0)
-    return null;
+  const renderReactions = () => {
+    if (!Array.isArray(message.reactions) || message.reactions.length === 0)
+      return null;
 
-  const grouped = {};
-  message.reactions.forEach((r) => {
-    grouped[r.emoji] = (grouped[r.emoji] || 0) + 1;
-  });
+    const grouped = {};
+    message.reactions.forEach((r) => {
+      grouped[r.emoji] = (grouped[r.emoji] || 0) + 1;
+    });
 
-  return (
-    <Flex
-      mt={1}
-      alignSelf={ownMessage ? "flex-end" : "flex-start"}
-      gap={1}
-      px={2}
-      py="2px"
-      bg={useColorModeValue("gray.100", "gray.700")}
-      borderRadius="full"
-      width="fit-content"
-      fontSize="13px"
-    >
-      {Object.entries(grouped).map(([emoji, count]) => (
-        <Flex key={emoji} align="center" gap="2px">
-          <Text>{emoji}</Text>
-          {count > 1 && (
-            <Text fontSize="11px" color="gray.500">
-              {count}
-            </Text>
-          )}
-        </Flex>
-      ))}
-    </Flex>
-  );
-};
-
+    return (
+      <Flex
+        mt={1}
+        alignSelf={ownMessage ? "flex-end" : "flex-start"}
+        gap={1}
+        px={2}
+        py="2px"
+        bg={useColorModeValue("gray.100", "gray.700")}
+        borderRadius="full"
+        width="fit-content"
+        fontSize="13px"
+      >
+        {Object.entries(grouped).map(([emoji, count]) => (
+          <Flex key={emoji} align="center" gap="2px">
+            <Text>{emoji}</Text>
+            {count > 1 && (
+              <Text fontSize="11px" color="gray.500">
+                {count}
+              </Text>
+            )}
+          </Flex>
+        ))}
+      </Flex>
+    );
+  };
 
   // ============================
   //        RENDER UI
   // ============================
   return (
     <>
-      {/* ======================== */}
       {/*      SENDER SIDE         */}
-      {/* ======================== */}
       {ownMessage ? (
         <Flex gap={2} alignSelf="flex-end" alignItems="flex-end">
           <Popover placement="top-end">
@@ -456,15 +450,13 @@ const renderReactions = () => {
               <ReactionBar onReact={handleReaction} alignRight />
             )}
 
-{replyTo && (
-  <Box mb={1}>
-    <Text fontSize="xs" color="gray.400">
-      {getReplyPreviewText(replyTo)}
-    </Text>
-  </Box>
-)}
-
-
+            {replyTo && (
+              <Box mb={1}>
+                <Text fontSize="xs" color="gray.400">
+                  {getReplyPreviewText(replyTo)}
+                </Text>
+              </Box>
+            )}
 
             {isCallMessage && renderCallMessage()}
 
@@ -492,12 +484,10 @@ const renderReactions = () => {
 
             <Flex mt={1} justifyContent="flex-end" gap={1}>
               <Text fontSize="xs" color={timeColor}>
-                {moment(message.updatedAt || message.createdAt).format("h:mm A")}
+                {moment(message.updatedAt || message.createdAt).format(
+                  "h:mm A"
+                )}
               </Text>
-
-              {/* {message.updatedAt !== message.createdAt && (
-                <Text fontSize="10px" color="gray.400">edited</Text>
-              )} */}
 
               <BsCheckAll size={16} color="cyan" />
             </Flex>
@@ -540,7 +530,9 @@ const renderReactions = () => {
               borderRadius="full"
               align="center"
               justify="center"
-              bg={getAvatarColor(message.sender?.name || message.sender?.username)}
+              bg={getAvatarColor(
+                message.sender?.name || message.sender?.username
+              )}
               color="white"
               fontWeight="bold"
             >
@@ -552,24 +544,28 @@ const renderReactions = () => {
             {renderForwardedLabel()}
             {showReactions && <ReactionBar onReact={handleReaction} />}
 
-    {replyTo && (
-  <Box mb={1}>
-    <Text fontSize="xs" color="gray.400">
-      {getReplyPreviewText(replyTo)}
-    </Text>
-  </Box>
-)}
-
+            {replyTo && (
+              <Box mb={1}>
+                <Text fontSize="xs" color="gray.400">
+                  {getReplyPreviewText(replyTo)}
+                </Text>
+              </Box>
+            )}
 
             {isCallMessage && renderCallMessage()}
 
             {hasText && (
-  <Flex bg={ownMessage ? ownMessageBg : otherBg} p={2} borderRadius="md" maxW="70vw">
-    <Text color={ownMessage ? "white" : otherText}>
-      {message.text}
-    </Text>
-  </Flex>
-)}
+              <Flex
+                bg={ownMessage ? ownMessageBg : otherBg}
+                p={2}
+                borderRadius="md"
+                maxW="70vw"
+              >
+                <Text color={ownMessage ? "white" : "white"}>
+                  {message.text}
+                </Text>
+              </Flex>
+            )}
 
             {hasAttachments &&
               message.attachments.map((att, idx) => (

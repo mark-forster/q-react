@@ -38,7 +38,7 @@ const rejoinFlag = params.get("rejoin") === "true";
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
-  // ⭐ NEW STATES
+  // STATES
   const [callStarted, setCallStarted] = useState(false);
   const [participants, setParticipants] = useState([]);
 
@@ -59,16 +59,13 @@ useEffect(() => {
   socket.on("roomEnded", guardEnd);
   socket.on("callRejected", guardEnd);
     
-    // Safety check: if backend emits group event for single call or mixed up
     socket.on("groupCallParticipantLeft", ({ roomID: rid, userId }) => {
        if (String(rid) !== String(roomID)) return;
-       // If we are calling a specific user and they left, end it.
        if (userID && String(userId) === String(userID)) {
           handleInternalEnd();
        }
     });
 
-    // Check status on connect (Handle Race Condition)
     socket.emit("checkCallStatus", { roomID }, (response) => {
       if (
         response.status === "ended" ||
@@ -172,10 +169,8 @@ useEffect(() => {
   ========================= */
  useEffect(() => {
   if (acceptedFlag || rejoinFlag) {
-    // ✅ accept OR rejoin → join immediately
     joinRoomNow();
   } else {
-    // ❌ only brand-new outgoing call rings
     startRing();
   }
 }, [acceptedFlag, rejoinFlag]);
@@ -195,19 +190,17 @@ useEffect(() => {
   }, []);
 
   /* =========================
-     ⭐ SOCKET CALL EVENTS (IMPORTANT)
+     SOCKET CALL EVENTS (IMPORTANT)
   ========================= */
   useEffect(() => {
     if (!socket) return;
 
-    // 🔥 B (or anyone) accepted → A must join + UI change
     const onCallStarted = ({ roomID: rid }) => {
       if (String(rid) !== String(roomID)) return;
       setCallStarted(true);
       joinRoomNow();
     };
 
-    // 👥 Group participant joined (Messenger-style)
     const onParticipantJoined = ({ roomID: rid, userId }) => {
       if (String(rid) !== String(roomID)) return;
       setParticipants((prev) =>

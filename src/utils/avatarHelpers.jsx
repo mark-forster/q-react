@@ -1,6 +1,3 @@
-// utils/avatarHelpers.js
-// Telegram-style Initials + Stable Color Picker
-
 export const getInitials = (name = "", username = "") => {
   const base = name || username || "";
   if (!base) return "U";
@@ -17,7 +14,6 @@ export const getInitials = (name = "", username = "") => {
   );
 };
 
-// Profile colors (Telegram-style)
 const avatarColors = [
   "#6C5CE7",
   "#0984E3",

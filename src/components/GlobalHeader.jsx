@@ -1,4 +1,3 @@
-// src/components/GlobalHeader.jsx
 import React from "react";
 import {
   Flex,
@@ -12,10 +11,11 @@ import {
   MenuList,
   MenuItem,
   useColorModeValue,
+  Image
 } from "@chakra-ui/react";
 
 import { FiBell, FiSun, FiMoon } from "react-icons/fi";
-
+import logo from "../assets/images/logo.png";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../atoms/userAtom";
 
@@ -28,7 +28,7 @@ const GlobalHeader = () => {
   const setUser = useSetRecoilState(userAtom);
   const navigate = useNavigate();
 
-  // 🔥 Logout Logic
+  //  Logout Logic
   const handleLogout = async () => {
     try {
       const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -50,7 +50,7 @@ const GlobalHeader = () => {
     <Flex
       h="60px"
       w="100%"
-      bg={useColorModeValue("#F3F2F1", "#1f2d3d")}
+      bg={useColorModeValue("#23ADE3", "#3FB07B")}
 borderBottom="1px solid"
 borderColor={useColorModeValue("gray.200", "gray.700")}
       align="center"
@@ -58,12 +58,16 @@ borderColor={useColorModeValue("gray.200", "gray.700")}
       justify="space-between"
     >
       {/* LEFT SIDE (Logo) */}
-<Box
-  fontSize="lg"
-  fontWeight="bold"
-  color={useColorModeValue("gray.700", "whiteAlpha.900")}
->        Arakkha Chat
-      </Box>
+<Flex align="center" gap={3}>
+  <Image src={logo} alt="Logo" boxSize="60px" objectFit="contain" />
+  <Box
+    fontSize="lg"
+    fontWeight="bold"
+    color={useColorModeValue("white.700", "white.700")}
+  >
+    Arakkha Chat
+  </Box>
+</Flex>
 
       {/* RIGHT SIDE BUTTONS */}
       <Flex align="center" gap={3}>

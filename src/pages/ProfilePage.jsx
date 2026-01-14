@@ -46,7 +46,6 @@ function ProfilePage() {
     
     return (
         <Flex align={"center"} justify={"center"} minH={"100vh"}>
-            {/* The spacing on this Stack has been reduced to create a more compact layout */}
             <Stack spacing={4} mx={"auto"} maxW={"lg"} py={6} px={6} w="full">
                 {/* Header Section */}
                 <Flex alignItems="center" justifyContent="flex-start" mb={2}>
@@ -81,10 +80,8 @@ function ProfilePage() {
                     </Text>
                 </Box>
                 
-                {/* A Divider is added for a clean visual separation */}
                 <Divider />
 
-                {/* Personal Information Section and Address Section are now combined for a cleaner look */}
                 <Box rounded={"lg"} bg={useColorModeValue("white", "gray.700")} boxShadow={"lg"} p={6}>
                     <Heading fontSize="md" mb={4}>Personal Information</Heading>
                     <List spacing={3}>

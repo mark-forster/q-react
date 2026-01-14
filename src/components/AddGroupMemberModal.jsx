@@ -1,7 +1,3 @@
-// components/AddGroupMemberModal.jsx
-// Telegram-style Add Members Modal
-// Search logic SAME as GroupCreateModal (debounced)
-
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal,
@@ -27,11 +23,11 @@ const AddGroupMemberModal = ({
   onClose,
   allUsers = [],
   members = [],
-  onAdd,          // (userIds: string[]) => void
+  onAdd, // (userIds: string[]) 
   addingUser,
 }) => {
+  const brandColor = useColorModeValue("#23ADE3", "#3FB07B");
   const hoverBg = useColorModeValue("gray.100", "whiteAlpha.100");
-
   /* =============================
      STATES
   ============================= */
@@ -48,13 +44,11 @@ const AddGroupMemberModal = ({
   );
 
   const availableUsers = useMemo(() => {
-    return allUsers.filter(
-      (u) => !memberIds.has(String(u._id))
-    );
+    return allUsers.filter((u) => !memberIds.has(String(u._id)));
   }, [allUsers, memberIds]);
 
   /* =============================
-     SEARCH (DEBOUNCED) – SAME AS GroupCreateModal
+     SEARCH (DEBOUNCED) 
   ============================= */
   useEffect(() => {
     if (!isOpen) return;
@@ -64,9 +58,7 @@ const AddGroupMemberModal = ({
 
       setFilteredUsers(
         availableUsers.filter((u) =>
-          (u.name || u.username || u.email || "")
-            .toLowerCase()
-            .includes(term)
+          (u.name || u.username || u.email || "").toLowerCase().includes(term)
         )
       );
     }, 300);
@@ -90,9 +82,7 @@ const AddGroupMemberModal = ({
   ============================= */
   const toggleSelect = (id) => {
     setSelectedIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
@@ -203,20 +193,32 @@ const AddGroupMemberModal = ({
                     </Box>
                   </Flex>
 
-                  {/* CHECKBOX STYLE */}
-                  <Box
-                    w="20px"
-                    h="20px"
+                  <Flex
+                    w="22px"
+                    h="22px"
+                    minW="22px"
+                    minH="22px"
                     borderRadius="full"
                     border="2px solid"
-                    borderColor={checked ? "blue.500" : "gray.400"}
-                    bg={checked ? "blue.500" : "transparent"}
-                    display="flex"
+                    borderColor={checked ? brandColor : "gray.400"}
+                    bg={checked ? brandColor : "transparent"}
                     alignItems="center"
                     justifyContent="center"
+                    transition="all 0.2s"
+                    lineHeight="0"
                   >
-                    {checked && <FiCheck color="white" size={12} />}
-                  </Box>
+                    {checked && (
+                      <FiCheck
+                        color="white"
+                        size={14}
+                        strokeWidth={4}
+                        style={{
+                          flexShrink: 0,
+                          margin: "auto",
+                        }}
+                      />
+                    )}
+                  </Flex>
                 </Flex>
               );
             })}
@@ -233,6 +235,7 @@ const AddGroupMemberModal = ({
             onClick={handleAdd}
             isDisabled={selectedIds.length === 0}
             isLoading={addingUser}
+            bg={useColorModeValue("#23ADE3", "#3FB07B")}
           >
             Add
           </Button>
