@@ -206,7 +206,7 @@ const Message = ({ ownMessage, message }) => {
   } = useDisclosure();
 
   const ownMessageBg = useColorModeValue("#23ADE3", "#3FB07B;");
-  const otherBg = useColorModeValue("#cbcbcb", "#000000");
+  const otherBg = useColorModeValue("#cbcbcb", "#cbcbcb");
 const otherText = useColorModeValue("gray.800", "white");
   const timeColor = useColorModeValue("gray.500", "gray.400");
 
