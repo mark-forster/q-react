@@ -11,7 +11,7 @@ import {
   IconButton,
   useDisclosure,
   useColorModeValue,
-   Modal,
+  Modal,
   ModalOverlay,
   ModalContent,
   ModalHeader,
@@ -21,7 +21,7 @@ import {
 
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import useIncomingCall from "./hooks/useIncomingCall"; 
+import useIncomingCall from "./hooks/useIncomingCall";
 
 import MessageContainer from "./components/MessageContainer";
 import ConversationList from "./components/ConversationList";
@@ -52,7 +52,12 @@ const api = axios.create({
   withCredentials: true,
 });
 
-const updateConversationOnNewMessage = (prev, msg, myId, selectedConversation) => {
+const updateConversationOnNewMessage = (
+  prev,
+  msg,
+  myId,
+  selectedConversation
+) => {
   const cid = String(msg.conversationId);
   let updated = null;
   const rest = [];
@@ -68,7 +73,7 @@ const updateConversationOnNewMessage = (prev, msg, myId, selectedConversation) =
         unreadCount:
           !isFromMe && !isActive
             ? (c.unreadCount || 0) + 1
-            : (c.unreadCount || 0),
+            : c.unreadCount || 0,
       };
     } else {
       rest.push(c);
@@ -77,8 +82,6 @@ const updateConversationOnNewMessage = (prev, msg, myId, selectedConversation) =
 
   return updated ? [updated, ...rest] : prev;
 };
-
-
 
 const ChatPage = () => {
   const [loadingConversation, setLoadingConversation] = useState(true);
@@ -101,12 +104,8 @@ const ChatPage = () => {
   const [deletingId, setDeletingId] = useState(null);
   const { socket, onlineUsers } = useSocket();
   const [sendingPreview, setSendingPreview] = useState(null);
- const {
-    incomingCallData,
-    isIncomingCallOpen,
-    answerCall,
-    rejectCall,
-  } = useIncomingCall(socket);
+  const { incomingCallData, isIncomingCallOpen, answerCall, rejectCall } =
+    useIncomingCall(socket);
 
   //  User Info Sidebar state
   const [userProfileSidebarData, setUserProfileSidebarData] = useState(null);
@@ -133,7 +132,7 @@ const ChatPage = () => {
       case "groups":
         return list.filter((c) => c.isGroup);
       case "personal":
-        return list.filter((c)=>c.isGroup !==true);
+        return list.filter((c) => c.isGroup !== true);
       case "unread":
         return list.filter((c) => Number(c.unreadCount || 0) > 0);
       default:
@@ -142,7 +141,7 @@ const ChatPage = () => {
   };
 
   // -------------------------------------------------------------------
-  // SOCKET: newMessage 
+  // SOCKET: newMessage
   // -------------------------------------------------------------------
   useEffect(() => {
     if (!socket) return;
@@ -151,14 +150,9 @@ const ChatPage = () => {
       const myId = String(currentUser._id);
       const cid = String(msg.conversationId);
 
-     setConversations((prev) =>
-  updateConversationOnNewMessage(
-    prev,
-    msg,
-    myId,
-    selectedConversation
-  )
-);
+      setConversations((prev) =>
+        updateConversationOnNewMessage(prev, msg, myId, selectedConversation)
+      );
 
       if (String(msg.sender) === myId) {
         return;
@@ -171,31 +165,36 @@ const ChatPage = () => {
         });
       }
     };
-const handleConversationUpdated = (preview) => {
-  if (!preview?._id) return;
+    const handleConversationUpdated = (payload) => {
+      if (!payload?._id) return;
 
-  setConversations((prev) => {
-    const updated = prev.map((c) =>
-      String(c._id) === String(preview._id)
-        ? {
-            ...c,
-            lastMessage: preview.lastMessage ?? c.lastMessage,
-            updatedAt: preview.updatedAt ?? c.updatedAt,
-          }
-        : c
-    );
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          String(c._id) === String(payload._id)
+            ? {
+                ...c,
+                ...payload,
+                lastMessage: payload.lastMessage ?? c.lastMessage,
+                updatedAt: payload.updatedAt ?? c.updatedAt,
+              }
+            : c
+        );
 
-    const target = updated.find(
-      (c) => String(c._id) === String(preview._id)
-    );
-    const rest = updated.filter(
-      (c) => String(c._id) !== String(preview._id)
-    );
+        const target = updated.find(
+          (c) => String(c._id) === String(payload._id)
+        );
+        const rest = updated.filter(
+          (c) => String(c._id) !== String(payload._id)
+        );
+        return target ? [target, ...rest] : prev;
+      });
 
-    return target ? [target, ...rest] : prev;
-  });
-};
-
+      setSelectedConversation((prev) =>
+        prev && String(prev._id) === String(payload._id)
+          ? { ...prev, ...payload }
+          : prev
+      );
+    };
 
     //
     const handleConversationCreated = (newConv) => {
@@ -246,53 +245,83 @@ const handleConversationUpdated = (preview) => {
       toast.success("New chat restored");
     };
 
-socket.on("callStarted", ({ roomID, callType }) => {
-  setConversations((prev) =>
-    prev.map((c) => {
-      if (
-        String(c._id) === String(roomID) &&
-        c.isGroup === true        
-      ) {
-        return {
-          ...c,
-          hasActiveCall: true,
-          activeCallType: callType || "audio",
-        };
-      }
-      return c;
-    })
-  );
-});
-
-
-socket.on("roomEnded", ({ roomID }) => {
-  setConversations((prev) =>
-    prev.map((c) =>
-      String(c._id) === String(roomID) && c.isGroup
-        ? {
-            ...c,
-            hasActiveCall: false,
-            activeCallType: null,
+    socket.on("callStarted", ({ roomID, callType }) => {
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (String(c._id) === String(roomID) && c.isGroup === true) {
+            return {
+              ...c,
+              hasActiveCall: true,
+              activeCallType: callType || "audio",
+            };
           }
-        : c
-    )
-  );
-});
+          return c;
+        })
+      );
+    });
 
+    socket.on("roomEnded", ({ roomID }) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          String(c._id) === String(roomID) && c.isGroup
+            ? {
+                ...c,
+                hasActiveCall: false,
+                activeCallType: null,
+              }
+            : c
+        )
+      );
+    });
+    const handleRemovedFromGroup = ({ conversationId }) => {
+      // Remove form  conversation list
+      setConversations((prev) =>
+        prev.filter((c) => String(c._id) !== String(conversationId))
+      );
 
+      // selected conversation clear
+      setSelectedConversation((prev) =>
+        prev && String(prev._id) === String(conversationId) ? null : prev
+      );
+      setMessages((prev) =>
+        selectedConversation &&
+        String(selectedConversation._id) === String(conversationId)
+          ? []
+          : prev
+      );
 
+      // check  Sidebar with current data
+      setUserProfileSidebarData((prevData) => {
+        // sidebar
+        if (!prevData) return prevData;
+
+        if (!prevData.isGroup) return prevData;
+
+        if (String(prevData._id) !== String(conversationId)) {
+          return prevData;
+        }
+
+        setIsUserSidebarOpen(false);
+        return null; // sidebar close
+      });
+    };
+
+    socket.on("removedFromGroup", handleRemovedFromGroup);
+    socket.on("leftGroup", handleRemovedFromGroup);
     socket.on("newMessage", handleNewMessage);
     socket.on("conversationCreated", handleConversationCreated);
-    socket.on("conversationUpdated", handleConversationUpdated)
+    socket.on("conversationUpdated", handleConversationUpdated);
     socket.on("conversationRestored", handleConversationRestored);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("conversationCreated", handleConversationCreated);
-      socket.off("conversationUpdated", handleConversationUpdated)
+      socket.off("conversationUpdated", handleConversationUpdated);
       socket.off("conversationRestored", handleConversationRestored);
       socket.off("callStarted");
-    socket.off("roomEnded");
+      socket.off("roomEnded");
+      socket.off("removedFromGroup", handleRemovedFromGroup);
+      socket.off("leftGroup", handleRemovedFromGroup);
     };
   }, [
     socket,
@@ -351,6 +380,50 @@ socket.on("roomEnded", ({ roomID }) => {
       return arr;
     });
   };
+
+  // profile sidebar with selected conversation
+  useEffect(() => {
+    if (!isUserSidebarOpen || !selectedConversation) return;
+
+    // -----------------------
+    // GROUP CONVERSATION
+    // -----------------------
+    if (selectedConversation.isGroup) {
+      const fullGroup = conversations.find(
+        (c) => String(c._id) === String(selectedConversation._id)
+      );
+
+      if (fullGroup) {
+        setUserProfileSidebarData({
+          ...fullGroup,
+          isGroup: true,
+        });
+      }
+      return;
+    }
+
+    // -----------------------
+    // SINGLE CONVERSATION
+    // -----------------------
+    const conv = conversations.find(
+      (c) => String(c._id) === String(selectedConversation._id)
+    );
+
+    if (!conv) return;
+
+    const friend = conv.participants?.find(
+      (p) => String(p._id) !== String(currentUser._id)
+    );
+
+    if (friend) {
+      setUserProfileSidebarData(friend);
+    }
+  }, [
+    selectedConversation,
+    isUserSidebarOpen,
+    conversations,
+    currentUser?._id,
+  ]);
 
   // -------------------------------------------------------------------
   // SEARCH USERS
@@ -529,7 +602,11 @@ socket.on("roomEnded", ({ roomID }) => {
           borderColor={useColorModeValue("gray.200", "gray.700")}
         >
           {filterType === "groups" && (
-            <Button size="sm" bg={useColorModeValue("#23ADE3", "#3FB07B")}  onClick={openGroupCreate}>
+            <Button
+              size="sm"
+              bg={useColorModeValue("#23ADE3", "#3FB07B")}
+              onClick={openGroupCreate}
+            >
               Create Group
             </Button>
           )}

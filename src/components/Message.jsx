@@ -206,8 +206,8 @@ const Message = ({ ownMessage, message }) => {
   } = useDisclosure();
 
   const ownMessageBg = useColorModeValue("#23ADE3", "#3FB07B;");
-  const otherBg = useColorModeValue("gray.300", "gray.600");
-  const otherText = useColorModeValue("black", "white");
+  const otherBg = useColorModeValue("#cbcbcb", "#000000");
+const otherText = useColorModeValue("gray.800", "white");
   const timeColor = useColorModeValue("gray.500", "gray.400");
 
   const isCallMessage =
@@ -558,10 +558,11 @@ const Message = ({ ownMessage, message }) => {
               <Flex
                 bg={ownMessage ? ownMessageBg : otherBg}
                 p={2}
+                color="black"
                 borderRadius="md"
                 maxW="70vw"
               >
-                <Text color={ownMessage ? "white" : "white"}>
+                <Text color={ownMessage ? "white" : "black"}>
                   {message.text}
                 </Text>
               </Flex>

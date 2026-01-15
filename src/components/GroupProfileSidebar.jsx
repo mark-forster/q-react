@@ -27,6 +27,14 @@ const GroupProfileSidebar = ({ group, onClose }) => {
   const labelColor = useColorModeValue("gray.500", "gray.400");
 
   const currentUser = useRecoilValue(userAtom);
+  const isAdmin = useMemo(() => {
+    if (!group?.admins || !currentUser?._id) return false;
+
+    return group.admins.some((id) => {
+      const adminId = id?._id ? String(id._id) : String(id);
+      return adminId === String(currentUser._id);
+    });
+  }, [group, currentUser]);
 
   // =========================
   // Add Member Modal
@@ -49,6 +57,8 @@ const GroupProfileSidebar = ({ group, onClose }) => {
     setNewName,
     allUsers,
     addingUser,
+    removingUserId,
+    leaving,
     renameGroup,
     addMember,
     removeMember,
@@ -91,7 +101,12 @@ const GroupProfileSidebar = ({ group, onClose }) => {
   const title = group?.name || "Group Chat";
   const initials = getInitials(title);
   const color = getAvatarColor(title);
-
+  const isUserAdmin = (userId) => {
+    return group.admins?.some((id) => {
+      const adminId = id?._id ? String(id._id) : String(id);
+      return adminId === String(userId);
+    });
+  };
   // =========================
   // UI
   // =========================
@@ -244,9 +259,12 @@ const GroupProfileSidebar = ({ group, onClose }) => {
                     <Text fontWeight="bold">Members ({members.length})</Text>
 
                     {/*  Add Member → Modal */}
+
                     <Button
                       size="sm"
                       leftIcon={<FiUserPlus />}
+                      isLoading={addingUser}
+                      loadingText="Adding"
                       variant="outline"
                       onClick={openAddModal}
                     >
@@ -269,22 +287,40 @@ const GroupProfileSidebar = ({ group, onClose }) => {
                             size="sm"
                             src={u.profilePic?.url || u.profilePic || ""}
                           />
-                          <Text fontSize="sm">
-                            {u._id === currentUser._id
-                              ? `${u.name} (You)`
-                              : u.name}
-                          </Text>
+
+                          <Box>
+                            <Text fontSize="sm" fontWeight="medium">
+                              {u._id === currentUser._id
+                                ? `${u.name} (You)`
+                                : u.name}
+                            </Text>
+
+                            <Text
+                              fontSize="xs"
+                              fontWeight="semibold"
+                              color={
+                                isUserAdmin(u._id) ? "green.500" : "gray.500"
+                              }
+                            >
+                              {isUserAdmin(u._id) ? "Admin" : "Member"}
+                            </Text>
+                          </Box>
                         </Flex>
 
-                        {u._id !== currentUser._id && (
-                          <IconButton
-                            icon={<FiTrash />}
-                            size="sm"
-                            colorScheme="red"
-                            variant="ghost"
-                            onClick={() => removeMember(u._id)}
-                          />
-                        )}
+                        {isAdmin &&
+                          u._id !== currentUser._id &&
+                          (removingUserId === u._id ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            <IconButton
+                              icon={<FiTrash />}
+                              size="sm"
+                              colorScheme="red"
+                              variant="ghost"
+                              onClick={() => removeMember(u._id)}
+                              aria-label="remove member"
+                            />
+                          ))}
                       </Flex>
                     ))}
                   </Stack>
@@ -314,7 +350,12 @@ const GroupProfileSidebar = ({ group, onClose }) => {
                 colorScheme="red"
                 variant="outline"
                 w="100%"
-                onClick={leaveGroup}
+                isLoading={leaving}
+                loadingText="Leaving"
+                onClick={async () => {
+                  await leaveGroup();
+                  onClose();
+                }}
               >
                 Leave Group
               </Button>
