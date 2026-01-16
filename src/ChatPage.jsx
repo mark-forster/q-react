@@ -90,9 +90,7 @@ const ChatPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchedUsers, setSearchedUsers] = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
-  useEffect(() => {
-    setSelectedConversation(null);
-  }, []);
+
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
   const [selectedConversation, setSelectedConversation] = useRecoilState(
     selectedConversationAtom
@@ -359,6 +357,48 @@ const ChatPage = () => {
 
     getConvs();
   }, []);
+//  RESTORE LAST CONVERSATION AFTER REFRESH
+useEffect(() => {
+  if (!conversations.length || !currentUser?._id) return;
+
+  const saved = localStorage.getItem("lastConversationId");
+  if (!saved) return;
+
+  const cid = JSON.parse(saved);
+
+  // already selected → skip
+  if (String(selectedConversation?._id) === String(cid)) return;
+
+  const conv = conversations.find(
+    (c) => String(c._id) === String(cid)
+  );
+  if (!conv) return;
+
+  if (conv.isGroup) {
+    setSelectedConversation({
+      _id: conv._id,
+      isGroup: true,
+      name: conv.name,
+      participants: conv.participants,
+      userId: "group-id",
+      username: "Group Chat",
+    });
+  } else {
+    const friend = conv.participants?.find(
+      (p) => String(p._id) !== String(currentUser._id)
+    );
+    if (!friend) return;
+
+    setSelectedConversation({
+      _id: conv._id,
+      userId: friend._id,
+      username: friend.username,
+      name: friend.name || friend.username,
+      userProfilePic: friend.profilePic,
+      isGroup: false,
+    });
+  }
+}, [conversations, currentUser?._id]);
 
   // -------------------------------------------------------------------
   // SELECT A CONVERSATION

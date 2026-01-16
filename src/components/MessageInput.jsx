@@ -400,8 +400,8 @@ const MessageInput = ({ setMessages }) => {
       attachments: [],
       conversationId: selectedConversation._id,
       createdAt: new Date().toISOString(),
-      seenBy: [user._id],
       status: "sending",
+      readAt:null
     };
 
     if (hasFiles) {
@@ -461,6 +461,7 @@ const MessageInput = ({ setMessages }) => {
                 lastMessage: {
                   _id: real._id,
                   text: real.text || "",
+                  status: real.status,
                   sender: real.sender,
                   updatedAt: real.createdAt,
                 },

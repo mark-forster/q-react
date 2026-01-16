@@ -36,6 +36,7 @@ const GlobalHeader = () => {
         baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
         withCredentials: true,
       });
+    localStorage.removeItem("lastConversationId");
 
       await api.post("/auth/logout");
     } catch (err) {
@@ -43,6 +44,7 @@ const GlobalHeader = () => {
     }
 
     setUser(null);
+
     navigate("/auth");
   };
 

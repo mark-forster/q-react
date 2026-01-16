@@ -23,7 +23,7 @@ import {
   PopoverBody,
 } from "@chakra-ui/react";
 
-import { BsCheckAll } from "react-icons/bs";
+import { BsCheckAll ,BsCheck} from "react-icons/bs";
 import { CiMenuKebab } from "react-icons/ci";
 import { FaEdit, FaForward, FaTrash, FaReply } from "react-icons/fa";
 
@@ -33,7 +33,7 @@ import { useDisclosure } from "@chakra-ui/react";
 import AttachmentDisplay from "./AttachmentDisplay";
 
 import { useRecoilValue, useSetRecoilState } from "recoil";
-import { focusInputAtom } from "../atoms/messageAtom";
+import { focusInputAtom ,groupReadStateAtom } from "../atoms/messageAtom";
 import {
   selectedConversationAtom,
   editingMessageAtom,
@@ -183,6 +183,7 @@ const Message = ({ ownMessage, message }) => {
   const selectedConversation = useRecoilValue(selectedConversationAtom);
   const user = useRecoilValue(userAtom);
   const conversations = useRecoilValue(conversationsAtom);
+  const groupReadState = useRecoilValue(groupReadStateAtom);
 
   const { deleteMessage, loading } = useDeleteMessage();
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
@@ -192,6 +193,24 @@ const Message = ({ ownMessage, message }) => {
   const [showReactions, setShowReactions] = useState(false);
 
   const { socket } = useSocket();
+// const isRead = message.status === "read";
+let isRead = false;
+
+if (!selectedConversation.isGroup) {
+  // DM
+  isRead = message.status === "read";
+} else {
+  // GROUP (Telegram style)
+  const cid = selectedConversation._id;
+  const map = groupReadState[cid] || {};
+
+  isRead =
+    ownMessage &&
+    Object.entries(map).some(([uid, lastReadAt]) => {
+      if (uid === String(user._id)) return false;
+      return new Date(lastReadAt) >= new Date(message.createdAt);
+    });
+}
 
   const {
     isOpen: isForwardModalOpen,
@@ -232,6 +251,8 @@ const otherText = useColorModeValue("gray.800", "white");
     );
   };
   const hasText = !isCallMessage && Boolean((message?.text || "").trim());
+  const hasReactions = Array.isArray(message?.reactions) && message.reactions.length > 0;
+
   const hasAttachments =
     Array.isArray(message?.attachments) && message.attachments.length > 0;
   const replyTo = message?.replyTo;
@@ -262,7 +283,6 @@ const otherText = useColorModeValue("gray.800", "white");
     return (
       <Flex
         bg={ownMessage ? ownMessageBg : otherBg}
-        color={ownMessage ? "white" : "dark"}
         px={4}
         py={3}
         borderRadius="2xl"
@@ -273,16 +293,16 @@ const otherText = useColorModeValue("gray.800", "white");
       >
         {/* LEFT SIDE */}
         <Flex direction="column" gap={1}>
-          <Text fontSize="md" fontWeight="600">
+          <Text fontSize="md" fontWeight="600" color={useColorModeValue("white","black")}>
             {label}
           </Text>
 
           <Flex align="center" gap={1}>
-            <Text fontSize="sm" color={isOutgoing ? "green.400" : "red.400"}>
+            <Text fontSize="sm" color={isOutgoing ? "white" : "red.400"}>
               {isOutgoing ? "↗" : "↙"}
             </Text>
 
-            <Text fontSize="sm" color="gray.400">
+            <Text fontSize="sm" color="gray.100">
               {moment(message.createdAt).format("h:mm A")}
               {info.status === "completed" && info.duration
                 ? `, ${info.duration} seconds`
@@ -488,8 +508,10 @@ const otherText = useColorModeValue("gray.800", "white");
                   "h:mm A"
                 )}
               </Text>
-
-              <BsCheckAll size={16} color="cyan" />
+                {
+            
+                  isRead?(<BsCheckAll size={16} color="white"/>):(<BsCheck size={16} color="white"/>)
+                }
             </Flex>
           </Bubble>
 

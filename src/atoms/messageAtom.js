@@ -33,3 +33,14 @@ export const focusInputAtom = atom({
   key: "focusInputAtom",
   default: false,
 });
+
+export const groupReadStateAtom = atom({
+  key: "groupReadStateAtom",
+  default: {},
+  // shape:
+  // {
+  //   conversationId: {
+  //     userId: lastReadAt
+  //   }
+  // }
+});

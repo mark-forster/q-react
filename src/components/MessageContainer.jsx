@@ -20,6 +20,7 @@ import {
   messagesAtom,
   conversationsAtom,
   editingMessageAtom,
+  groupReadStateAtom 
 } from "../atoms/messageAtom";
 
 import userAtom from "../atoms/userAtom";
@@ -45,6 +46,8 @@ const MessageContainer = () => {
   const [selectedConversation] = useRecoilState(selectedConversationAtom);
   const [messages, setMessages] = useRecoilState(messagesAtom);
   const [conversations, setConversations] = useRecoilState(conversationsAtom);
+  const [groupReadState, setGroupReadState] =
+  useRecoilState(groupReadStateAtom);
 
   const setEditingMessage = useSetRecoilState(editingMessageAtom);
   const currentUser = useRecoilValue(userAtom);
@@ -101,6 +104,37 @@ const MessageContainer = () => {
     load();
   }, [selectedConversation?._id, selectedConversation?.mock]);
 
+useEffect(() => {
+  if (!selectedConversation?._id) return;
+  if (!selectedConversation.isGroup) return;
+
+  const load = async () => {
+    try {
+      const res = await api.get(
+        `/messages/group-read-state/${selectedConversation._id}`
+      );
+
+      const map = {};
+      res.data.forEach((r) => {
+        map[String(r.userId)] = r.lastReadAt;
+      });
+
+      setGroupReadState((prev) => ({
+        ...prev,
+        [selectedConversation._id]: map,
+      }));
+    } catch (e) {
+      console.error("load group read state failed");
+    }
+  };
+
+  load();
+}, [selectedConversation?._id]);
+
+
+
+
+
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -110,7 +144,7 @@ const MessageContainer = () => {
   // --------------------------------------------------
   useEffect(() => {
     if (!socket) return;
-
+    
     const handleNewMessage = (msg) => {
       if (String(msg.conversationId) === String(selectedConversation?._id)) {
         setMessages((prev) =>
@@ -144,21 +178,42 @@ const MessageContainer = () => {
         )
       );
     };
+const handleMessagesSeen = ({ conversationId, userId }) => {
+  if (String(conversationId) !== String(selectedConversation?._id)) return;
+  if (selectedConversation?.isGroup) return;
 
-    const handleMessagesSeen = ({ conversationId, userId }) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          String(m.conversationId) === String(conversationId)
-            ? {
-                ...m,
-                seenBy: m.seenBy?.includes(userId)
-                  ? m.seenBy
-                  : [...(m.seenBy || []), userId],
-              }
-            : m
-        )
-      );
-    };
+  const meId = String(currentUser._id);
+
+  setMessages((prev) =>
+    prev.map((m) => {
+      const senderId = String(m.sender?._id || m.sender);
+      if (senderId === meId && m.status !== "read") {
+        return {
+          ...m,
+          status: "read",
+          readAt: new Date().toISOString(),
+        };
+      }
+      return m;
+    })
+  );
+
+  setConversations((prev) =>
+    prev.map((c) =>
+      String(c._id) === String(conversationId)
+        ? {
+            ...c,
+            lastMessage: {
+              ...c.lastMessage,
+              status: "read",
+            },
+          }
+        : c
+    )
+  );
+};
+
+
 
     const handleTyping = ({ conversationId, userId }) => {
       if (
@@ -246,7 +301,19 @@ const MessageContainer = () => {
         })
       );
     };
-
+const handleGroupReadUpdated = ({
+  conversationId,
+  userId,
+  lastReadAt,
+}) => {
+  setGroupReadState((prev) => ({
+    ...prev,
+    [conversationId]: {
+      ...(prev[conversationId] || {}),
+      [userId]: lastReadAt,
+    },
+  }));
+};
     socket.on("newMessage", handleNewMessage);
     socket.on("messagesSeen", handleMessagesSeen);
     socket.on("typing", handleTyping);
@@ -258,6 +325,7 @@ const MessageContainer = () => {
     socket.on("groupCallEnded", handleGroupCallEnded);
     socket.on("messageDeleted", handleMessageDeleted);
     socket.on("messageReactionUpdated", handleReactionUpdated);
+    socket.on("groupReadUpdated", handleGroupReadUpdated);
 
     return () => {
       socket.off("newMessage", handleNewMessage);
@@ -271,30 +339,64 @@ const MessageContainer = () => {
       socket.off("groupCallEnded", handleGroupCallEnded);
       socket.off("messageDeleted", handleMessageDeleted);
       socket.off("messageReactionUpdated", handleReactionUpdated);
+        socket.off("groupReadUpdated", handleGroupReadUpdated);
+
     };
   }, [socket, selectedConversation?._id, currentUser?._id]);
+// --------------------------------------------------
+// JOIN / LEAVE CONVERSATION (VERY IMPORTANT)
+// --------------------------------------------------
+useEffect(() => {
+  if (!socket) return;
+  if (!selectedConversation?._id) return;
+  if (selectedConversation?.mock) return;
+
+  const cid = selectedConversation._id;
+  socket.emit("joinConversation", { conversationId: cid });
+ 
+  return () => {
+    socket.emit("leaveConversation", { conversationId: cid });
+  };
+}, [socket, selectedConversation?._id, selectedConversation?.mock]);
+
+// GROUP SEEN (realtime)
+useEffect(() => {
+  if (!socket) return;
+  if (!selectedConversation?.isGroup) return;
+  if (!messages.length) return;
+
+  socket.emit("groupRead", {
+    conversationId: selectedConversation._id,
+    userId: currentUser._id,
+  });
+}, [messages]);
 
   // --------------------------------------------------
   // MARK AS SEEN
   // --------------------------------------------------
-  useEffect(() => {
-    if (!selectedConversation?._id || selectedConversation?.mock) return;
+useEffect(() => {
+  if (!selectedConversation?._id || selectedConversation?.mock) return;
 
-    const cid = String(selectedConversation._id);
-    const uid = String(currentUser._id);
-    const key = `${cid}-${uid}`;
+  // only
+  if (selectedConversation?.isGroup) return;
 
-    const hasUnseen = messages.some(
-      (m) => String(m.sender?._id) !== uid && !m.seenBy?.includes(uid)
-    );
+  const cid = String(selectedConversation._id);
+  const uid = String(currentUser._id);
+  const key = `${cid}-${uid}`;
 
-    if (!hasUnseen || seenRequestRef.current[key]) return;
-    seenRequestRef.current[key] = true;
+  const hasUnseen = messages.some((m) => {
+    const senderId = String(m.sender?._id || m.sender);
+    return senderId !== uid && m.status !== "read";
+  });
 
-    api.put(`/messages/seen/${cid}`).catch(() => {
-      delete seenRequestRef.current[key];
-    });
-  }, [messages, selectedConversation?._id]);
+  if (!hasUnseen || seenRequestRef.current[key]) return;
+  seenRequestRef.current[key] = true;
+
+  api.put(`/messages/seen/${cid}`).catch(() => {
+    delete seenRequestRef.current[key];
+  });
+}, [messages, selectedConversation?._id, selectedConversation?.isGroup]);
+
 
   // --------------------------------------------------
   // CALL ACTIONS

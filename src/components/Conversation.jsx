@@ -25,7 +25,7 @@ import {
 } from "../atoms/messageAtom";
 
 import { CiMenuKebab } from "react-icons/ci";
-import { BsCheckAll } from "react-icons/bs";
+import { BsCheckAll , BsCheck} from "react-icons/bs";
 import { useSocket } from "../context/SocketContext";
 import { FiPhone, FiVideo, FiPhoneMissed, FiX } from "react-icons/fi";
 
@@ -85,6 +85,7 @@ const Conversation = ({
         isGroup: true,
         participants: merged.participants,
       });
+       
     } else {
       setSelectedConversation({
         _id: merged._id,
@@ -94,13 +95,31 @@ const Conversation = ({
         userProfilePic: profilePic,
         isGroup: false,
       });
+       
     }
 
     setConversations((prev) =>
-      prev.map((c) => (c._id === merged._id ? { ...c, unreadCount: 0 } : c))
-    );
+  prev.map((c) => {
+    if (c._id !== merged._id) return c;
 
-    socket?.emit("joinConversationRoom", { conversationId: merged._id });
+    return {
+      ...c,
+      unreadCount: 0,
+      lastMessage:
+  !c.isGroup &&
+  c.lastMessage &&
+  String(friend?._id) === String(currentUser._id)
+    ? { ...c.lastMessage, status: "read" }
+    : c.lastMessage,
+    };
+  })
+);
+
+ localStorage.setItem(
+    "lastConversationId",
+    JSON.stringify(merged._id)
+  );
+   
   };
 
   // Delete chat handler
@@ -124,11 +143,14 @@ const Conversation = ({
 
   const seenList = lastMessage?.seenBy ? lastMessage.seenBy.map(String) : [];
 
-  const isSeen =
-    !isGroup &&
-    lastMessage &&
+let isSeen = false;
+
+if (!isGroup && lastMessage) {
+  isSeen =
     String(lastSenderId) === meId &&
-    seenList.includes(friendId);
+    lastMessage.status === "read";
+}
+
 
   const renderPreview = () => {
     if (callInfo) {
@@ -253,7 +275,7 @@ const Conversation = ({
         <Flex fontSize="xs" alignItems="center" gap={1}>
           {renderPreview()}
           {!isGroup && lastText && String(lastSenderId) === meId && (
-            <BsCheckAll size={16} color={isSeen ? "#4299E1" : "#A0AEC0"} />
+             isSeen?(<BsCheckAll size={16} color="white"/>):(<BsCheck size={16} color="white"/>)
           )}
         </Flex>
 
